@@ -6,7 +6,7 @@ import {
   Camera,
   useCameraDevice,
   useCameraPermission,
-  useFrameOutput,
+  useFrameProcessor,
 } from 'react-native-vision-camera';
 import { useTensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
@@ -23,7 +23,7 @@ export default function WorkoutScreen() {
   const router = useRouter();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
-  const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'), []);
+  const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
   const { resize } = useResizePlugin();
 
   const [reps, setReps] = useState(0);
@@ -34,7 +34,7 @@ export default function WorkoutScreen() {
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
 
-  // Worklet-accessible shared state
+  // Worklet-accessible shared state (react-native-worklets-core)
   const wentDown = useSharedValue(false);
   const lastDownTime = useSharedValue(0);
   const repCount = useSharedValue(0);
@@ -53,13 +53,10 @@ export default function WorkoutScreen() {
     }
   });
 
-  const frameOutput = useFrameOutput({
-    onFrame(frame) {
+  const frameProcessor = useFrameProcessor(
+    (frame) => {
       'worklet';
-      if (!isStarted.value || !model.model) {
-        frame.dispose();
-        return;
-      }
+      if (!isStarted.value || model.state !== 'loaded' || !model.model) return;
 
       const resized = resize(frame, {
         scale: { width: 192, height: 192 },
@@ -67,11 +64,10 @@ export default function WorkoutScreen() {
         dataType: 'float32',
       });
 
-      const outputs = model.model.runSync([resized.buffer as ArrayBuffer]);
-      const raw = new Float32Array(outputs[0]);
+      const outputs = model.model.runSync([resized]);
+      const raw = outputs[0] as Float32Array;
       const kps = parseMoveNetOutput(raw);
       const { phase, feedback: fb } = analyzePose(kps);
-
       const now = Date.now();
 
       if (phase === 'down' && !wentDown.value) {
@@ -82,14 +78,13 @@ export default function WorkoutScreen() {
       if (phase === 'up' && wentDown.value && now - lastDownTime.value > 350) {
         repCount.value = repCount.value + 1;
         wentDown.value = false;
-        onRepsUpdate(repCount.value, fb);
-      } else if (phase !== 'down') {
+        onRepsUpdate(repCount.value, 'Great rep!');
+      } else {
         onRepsUpdate(repCount.value, fb);
       }
-
-      frame.dispose();
     },
-  });
+    [model, isStarted, wentDown, lastDownTime, repCount, onRepsUpdate, resize]
+  );
 
   function handleStart() {
     wentDown.value = false;
@@ -164,7 +159,8 @@ export default function WorkoutScreen() {
           style={StyleSheet.absoluteFill}
           device={device}
           isActive={started && !finished}
-          outputs={[frameOutput]}
+          frameProcessor={frameProcessor}
+          pixelFormat="yuv"
         />
       )}
 

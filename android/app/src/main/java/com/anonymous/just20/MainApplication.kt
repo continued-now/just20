@@ -1,4 +1,4 @@
-package com.just20
+package com.anonymous.just20
 
 import android.app.Application
 import android.content.res.Configuration
