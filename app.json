@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "just20",
+    "slug": "just20",
+    "version": "1.0.0",
+    "scheme": "just20",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "just20 needs the front camera to count your push-ups using pose detection.",
+        "NSPhotoLibraryAddUsageDescription": "just20 saves your completion videos to share on social media."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F5F0"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FF4D4D",
+          "sounds": []
+        }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "just20 needs the front camera to count your push-ups.",
+          "enableFrameProcessors": true
+        }
+      ]
+    ]
+  }
+}
+
