@@ -10,7 +10,9 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "just20 needs the front camera to count your push-ups using pose detection.",
-        "NSPhotoLibraryAddUsageDescription": "just20 saves your completion videos to share on social media."
+        "NSPhotoLibraryAddUsageDescription": "just20 saves your completion card to your photos so you can share it.",
+        "NSLocationWhenInUseUsageDescription": "just20 shows your location on your share card.",
+        "LSApplicationQueriesSchemes": ["instagram-stories"]
       },
       "bundleIdentifier": "com.anonymous.just20"
     },
@@ -22,16 +24,21 @@
         "android.permission.CAMERA",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.CAMERA",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.anonymous.just20"
     },
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "just20 shows your location on your share card."
+        }
+      ]
     ]
   }
 }

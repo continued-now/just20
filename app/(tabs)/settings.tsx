@@ -1,11 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
-import { cancelAllNudges, scheduleNudges } from '../../lib/notifications';
+import { cancelAllNudges, getRemainingNudgeCount, scheduleNudges } from '../../lib/notifications';
 
 export default function SettingsScreen() {
-  const [notificationsOn, setNotificationsOn] = useState(true);
+  const [notificationsOn, setNotificationsOn] = useState(false);
+
+  useEffect(() => {
+    getRemainingNudgeCount().then((n) => setNotificationsOn(n > 0));
+  }, []);
 
   async function handleReschedule() {
     await cancelAllNudges();

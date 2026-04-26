@@ -38,12 +38,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
+    overflow: 'visible',
   },
   count: {
     fontSize: 80,
     fontWeight: '900',
     color: colors.text,
-    lineHeight: 90,
+    lineHeight: 96,
+    includeFontPadding: false,
   },
   target: {
     fontSize: fontSize.xl,

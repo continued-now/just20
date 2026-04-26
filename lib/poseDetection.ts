@@ -98,46 +98,6 @@ export function analyzePose(kps: Keypoint[]): PoseAnalysis {
   return { phase, elbowAngle, feedback, confidence };
 }
 
-// Finite state machine for counting reps
-export class PushupCounter {
-  private lastPhase: PushupPhase = 'transition';
-  private wentDown = false;
-  private downTime = 0;
-  private count = 0;
-  private readonly MIN_REP_MS = 350;
-
-  process(kps: Keypoint[]): { count: number; repCounted: boolean; feedback: string; phase: PushupPhase } {
-    const { phase, feedback } = analyzePose(kps);
-    const now = Date.now();
-    let repCounted = false;
-
-    if (phase === 'down' && this.lastPhase !== 'down' && !this.wentDown) {
-      this.wentDown = true;
-      this.downTime = now;
-    }
-
-    if (phase === 'up' && this.wentDown && now - this.downTime > this.MIN_REP_MS) {
-      this.count++;
-      this.wentDown = false;
-      repCounted = true;
-    }
-
-    this.lastPhase = phase;
-    return { count: this.count, repCounted, feedback, phase };
-  }
-
-  reset() {
-    this.count = 0;
-    this.lastPhase = 'transition';
-    this.wentDown = false;
-    this.downTime = 0;
-  }
-
-  get reps() {
-    return this.count;
-  }
-}
-
 // Parse raw TFLite output tensor into keypoints
 // MoveNet output shape: [1, 1, 17, 3] as flat Float32Array
 export function parseMoveNetOutput(output: Float32Array): Keypoint[] {

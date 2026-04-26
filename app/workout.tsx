@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -30,28 +31,56 @@ export default function WorkoutScreen() {
   const [feedback, setFeedback] = useState('Get into position');
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
 
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
 
-  // Worklet-accessible shared state (react-native-worklets-core)
+  // Worklet-accessible shared state
   const wentDown = useSharedValue(false);
   const lastDownTime = useSharedValue(0);
   const repCount = useSharedValue(0);
   const isStarted = useSharedValue(false);
+  const lastSentCount = useSharedValue(-1);
+  const lastFeedbackTime = useSharedValue(0);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
 
-  const onRepsUpdate = Worklets.createRunOnJS((count: number, fb: string) => {
-    setReps(count);
-    setFeedback(fb);
-    if (count >= TARGET && !finishedRef.current) {
-      finishedRef.current = true;
-      setFinished(true);
+  // Stable JS-thread callback — created once, never re-created
+  const onRepsUpdate = useRef(
+    Worklets.createRunOnJS((count: number, fb: string) => {
+      setReps(count);
+      setFeedback(fb);
+      if (count >= TARGET && !finishedRef.current) {
+        finishedRef.current = true;
+        setFinished(true);
+      }
+    })
+  ).current;
+
+  // Haptic on each rep
+  const prevRepsRef = useRef(0);
+  useEffect(() => {
+    if (reps > prevRepsRef.current) {
+      prevRepsRef.current = reps;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-  });
+  }, [reps]);
+
+  // 3-2-1 countdown
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown === 0) {
+      setCountdown(null);
+      setFeedback('Go!');
+      isStarted.value = true;
+      return;
+    }
+    const t = setTimeout(() => setCountdown((c) => (c ?? 1) - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown, isStarted]);
 
   const frameProcessor = useFrameProcessor(
     (frame) => {
@@ -78,25 +107,36 @@ export default function WorkoutScreen() {
       if (phase === 'up' && wentDown.value && now - lastDownTime.value > 350) {
         repCount.value = repCount.value + 1;
         wentDown.value = false;
+        lastSentCount.value = repCount.value;
+        lastFeedbackTime.value = now;
         onRepsUpdate(repCount.value, 'Great rep!');
       } else {
-        onRepsUpdate(repCount.value, fb);
+        // Throttle feedback updates to ~2 per second to reduce JS thread wake-ups
+        const countChanged = repCount.value !== lastSentCount.value;
+        if (countChanged || now - lastFeedbackTime.value > 500) {
+          lastSentCount.value = repCount.value;
+          lastFeedbackTime.value = now;
+          onRepsUpdate(repCount.value, fb);
+        }
       }
     },
-    [model, isStarted, wentDown, lastDownTime, repCount, onRepsUpdate, resize]
+    [model, isStarted, wentDown, lastDownTime, repCount, lastSentCount, lastFeedbackTime, onRepsUpdate, resize]
   );
 
   function handleStart() {
     wentDown.value = false;
     lastDownTime.value = 0;
     repCount.value = 0;
+    lastSentCount.value = -1;
+    lastFeedbackTime.value = 0;
     finishedRef.current = false;
+    prevRepsRef.current = 0;
     startTimeRef.current = Date.now();
     setReps(0);
-    setFeedback('Go!');
     setFinished(false);
     setStarted(true);
-    isStarted.value = true;
+    setCountdown(3);
+    // isStarted.value set after countdown reaches 0
   }
 
   async function handleFinish() {
@@ -121,6 +161,7 @@ export default function WorkoutScreen() {
             isStarted.value = false;
             const duration = Date.now() - startTimeRef.current;
             await saveSession(reps, duration);
+            await cancelAllNudges();
             router.back();
           },
         },
@@ -151,17 +192,20 @@ export default function WorkoutScreen() {
   }
 
   const modelReady = model.state === 'loaded';
+  const modelError = model.state === 'error';
 
   return (
     <View style={styles.root}>
-      {device && (
+      {device ? (
         <Camera
           style={StyleSheet.absoluteFill}
           device={device}
-          isActive={started && !finished}
+          isActive={!finished}
           frameProcessor={frameProcessor}
           pixelFormat="yuv"
         />
+      ) : (
+        <View style={styles.cameraFallback} />
       )}
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
@@ -172,11 +216,15 @@ export default function WorkoutScreen() {
           </TouchableOpacity>
         </View>
 
-        {started && (
-          <View style={styles.feedbackWrap}>
+        <View style={styles.feedbackWrap}>
+          {countdown !== null ? (
+            <Text style={[styles.feedbackText, styles.countdownText]}>
+              {countdown === 0 ? 'Go!' : String(countdown)}
+            </Text>
+          ) : (
             <Text style={styles.feedbackText}>{feedback}</Text>
-          </View>
-        )}
+          )}
+        </View>
 
         <View style={styles.bottom}>
           {finished ? (
@@ -193,12 +241,12 @@ export default function WorkoutScreen() {
               </View>
               {!started && (
                 <TouchableOpacity
-                  style={[styles.startBtn, !modelReady && styles.startBtnDisabled]}
+                  style={[styles.startBtn, (!modelReady || modelError) && styles.startBtnDisabled]}
                   onPress={handleStart}
-                  disabled={!modelReady}
+                  disabled={!modelReady || modelError}
                 >
                   <Text style={styles.startBtnText}>
-                    {modelReady ? 'START' : 'Loading model…'}
+                    {modelError ? 'Model failed to load' : modelReady ? 'START' : 'Loading model…'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -212,6 +260,7 @@ export default function WorkoutScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  cameraFallback: { ...StyleSheet.absoluteFillObject, backgroundColor: '#1a1a1a' },
   safe: { flex: 1, backgroundColor: colors.bg },
   overlay: { flex: 1, justifyContent: 'space-between' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
@@ -233,6 +282,11 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
+  },
+  countdownText: {
+    fontSize: 72,
+    fontWeight: '900',
+    letterSpacing: -2,
   },
   bottom: {
     backgroundColor: 'rgba(0,0,0,0.65)',

@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mascot, getMoodFromContext } from '../../components/Mascot';
@@ -7,19 +7,29 @@ import { StreakBadge } from '../../components/StreakBadge';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { useNudges } from '../../hooks/useNudges';
 import { useStreak } from '../../hooks/useStreak';
-import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { getStreakRepairStatus } from '../../lib/db';
 
 export default function HomeScreen() {
   const router = useRouter();
   const streak = useStreak();
   const nudges = useNudges();
+  // Prevent showing repair prompt more than once per session
+  const repairChecked = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
       streak.refresh();
       nudges.refresh();
-    }, [streak.refresh, nudges.refresh])
+
+      if (!repairChecked.current) {
+        repairChecked.current = true;
+        getStreakRepairStatus().then(repair => {
+          if (repair.eligible) {
+            router.push(`/streak-repair?prevStreak=${repair.previousStreak}`);
+          }
+        });
+      }
+    }, [streak.refresh, nudges.refresh, router])
   );
 
   const mood = getMoodFromContext(nudges.remaining, streak.completedToday);

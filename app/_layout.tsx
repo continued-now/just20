@@ -1,8 +1,13 @@
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { initDb } from '../lib/db';
-import { setupNotificationHandler, scheduleNudges, requestPermission } from '../lib/notifications';
+import { initDb, getStreak, isCompletedToday } from '../lib/db';
+import {
+  setupNotificationHandler,
+  scheduleNudges,
+  requestPermission,
+  scheduleStreakAtRiskNotification,
+} from '../lib/notifications';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -10,7 +15,14 @@ export default function RootLayout() {
       await initDb();
       setupNotificationHandler();
       const granted = await requestPermission();
-      if (granted) await scheduleNudges();
+      if (granted) {
+        await scheduleNudges();
+        // Schedule 9pm streak-at-risk notification if streak is active and not done yet
+        const [s, done] = await Promise.all([getStreak(), isCompletedToday()]);
+        if (s.current > 0 && !done) {
+          await scheduleStreakAtRiskNotification(s.current);
+        }
+      }
     }
     init();
   }, []);
@@ -27,6 +39,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="completion"
           options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+        />
+        <Stack.Screen
+          name="streak-repair"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
       </Stack>
     </>

@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 const START_HOUR = 7;
 const END_HOUR = 22;
 const NUDGE_COUNT = 20;
+const STREAK_AT_RISK_ID = 'streak-at-risk';
 
 const TIERS: { minRemaining: number; messages: string[] }[] = [
   {
@@ -58,7 +59,13 @@ export async function requestPermission(): Promise<boolean> {
 }
 
 export async function scheduleNudges(): Promise<void> {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  // Cancel all nudge notifications but preserve any streak-at-risk notification
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const n of scheduled) {
+    if (n.identifier !== STREAK_AT_RISK_ID) {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    }
+  }
 
   const now = new Date();
   const startMs = new Date(now).setHours(START_HOUR, 0, 0, 0);
@@ -95,6 +102,39 @@ export async function scheduleNudges(): Promise<void> {
 
 export async function cancelAllNudges(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+export async function scheduleStreakAtRiskNotification(currentStreak: number): Promise<void> {
+  // Cancel any existing streak-at-risk notification first
+  await Notifications.cancelScheduledNotificationAsync(STREAK_AT_RISK_ID).catch(() => {});
+
+  const now = new Date();
+  const ninepm = new Date();
+  ninepm.setHours(21, 0, 0, 0);
+
+  if (now >= ninepm) return; // Window has passed
+
+  const messages = [
+    `Your ${currentStreak}-day streak dies tonight. 3 hours left.`,
+    `Day ${currentStreak} is slipping. The floor is waiting.`,
+    `${currentStreak} days on the line. Do. The. Pushups.`,
+    `${currentStreak} days. Don't let tonight be the night you quit.`,
+  ];
+  const body = messages[Math.floor(Math.random() * messages.length)];
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: STREAK_AT_RISK_ID,
+    content: {
+      title: 'just20 ⚠️',
+      body,
+      sound: 'default',
+      data: { type: 'streak-at-risk' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: ninepm,
+    },
+  });
 }
 
 export async function getRemainingNudgeCount(): Promise<number> {
