@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { initDb, getStreak, isCompletedToday } from '../lib/db';
@@ -8,16 +8,25 @@ import {
   requestPermission,
   scheduleStreakAtRiskNotification,
 } from '../lib/notifications';
+import { getOrCreateUser } from '../lib/user';
 
 export default function RootLayout() {
+  const router = useRouter();
+
   useEffect(() => {
     async function init() {
       await initDb();
       setupNotificationHandler();
+
+      // Ensure a user profile exists; redirect to setup if no username yet
+      const user = await getOrCreateUser();
+      if (!user.username) {
+        setTimeout(() => router.replace('/profile-setup'), 0);
+      }
+
       const granted = await requestPermission();
       if (granted) {
         await scheduleNudges();
-        // Schedule 9pm streak-at-risk notification if streak is active and not done yet
         const [s, done] = await Promise.all([getStreak(), isCompletedToday()]);
         if (s.current > 0 && !done) {
           await scheduleStreakAtRiskNotification(s.current);
@@ -42,6 +51,14 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="streak-repair"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="profile-setup"
+          options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+        />
+        <Stack.Screen
+          name="chest-open"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
       </Stack>

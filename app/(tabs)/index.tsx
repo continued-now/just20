@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mascot, getMoodFromContext } from '../../components/Mascot';
@@ -7,19 +7,36 @@ import { StreakBadge } from '../../components/StreakBadge';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { useNudges } from '../../hooks/useNudges';
 import { useStreak } from '../../hooks/useStreak';
-import { getStreakRepairStatus } from '../../lib/db';
+import { getStreakRepairStatus, getCoins } from '../../lib/db';
+import { isChestAvailable } from '../../lib/coins';
+import { getBuddyStatuses } from '../../lib/social';
+import { type BuddyStatus } from '../../lib/social';
 
 export default function HomeScreen() {
   const router = useRouter();
   const streak = useStreak();
   const nudges = useNudges();
-  // Prevent showing repair prompt more than once per session
   const repairChecked = useRef(false);
+
+  const [chestReady, setChestReady] = useState(false);
+  const [coinBalance, setCoinBalance] = useState(0);
+  const [buddies, setBuddies] = useState<BuddyStatus[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       streak.refresh();
       nudges.refresh();
+
+      // Run all side-checks in parallel
+      Promise.all([
+        isChestAvailable(),
+        getCoins(),
+        getBuddyStatuses(),
+      ]).then(([chest, coins, buds]) => {
+        setChestReady(chest);
+        setCoinBalance(coins.balance);
+        setBuddies(buds);
+      });
 
       if (!repairChecked.current) {
         repairChecked.current = true;
@@ -41,11 +58,27 @@ export default function HomeScreen() {
     return `${nudges.remaining} nudge${nudges.remaining !== 1 ? 's' : ''} left today`;
   }
 
+  // Buddy summary for the social proof strip
+  const buddyDoneCount = buddies.filter(b => b.completedToday).length;
+  const buddySocialText =
+    buddies.length === 0
+      ? null
+      : buddyDoneCount === 0
+      ? `${buddies.length} buddy${buddies.length > 1 ? 's' : ''} still going today`
+      : buddyDoneCount === buddies.length
+      ? `All ${buddies.length} buddy${buddies.length > 1 ? 's' : ''} done today 🔥`
+      : `${buddyDoneCount}/${buddies.length} budd${buddies.length > 1 ? 'ies' : 'y'} done today`;
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.title}>just20</Text>
+          {coinBalance > 0 && (
+            <View style={styles.coinPill}>
+              <Text style={styles.coinText}>🪙 {coinBalance}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.center}>
@@ -58,7 +91,30 @@ export default function HomeScreen() {
           </View>
 
           <Text style={styles.status}>{statusText()}</Text>
+
+          {/* Social proof strip */}
+          {buddySocialText && (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.7}>
+              <Text style={styles.socialStrip}>{buddySocialText}</Text>
+            </TouchableOpacity>
+          )}
+          {buddies.length === 0 && (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.7}>
+              <Text style={styles.invitePrompt}>👥 Invite a friend to track together →</Text>
+            </TouchableOpacity>
+          )}
         </View>
+
+        {/* Weekly chest CTA (only on Sundays when eligible) */}
+        {chestReady && (
+          <TouchableOpacity
+            style={styles.chestCta}
+            onPress={() => router.push('/chest-open')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.chestCtaText}>📦 Weekly chest available — open it →</Text>
+          </TouchableOpacity>
+        )}
 
         {!streak.completedToday && (
           <View style={styles.bottom}>
@@ -90,13 +146,31 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: spacing.lg },
   header: {
     paddingTop: spacing.md,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
   title: {
     fontSize: 32,
     fontWeight: '900',
     color: colors.text,
     letterSpacing: -1,
+  },
+  coinPill: {
+    position: 'absolute',
+    right: 0,
+    backgroundColor: '#FFF8DC',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+  },
+  coinText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: '#B8860B',
   },
   center: {
     flex: 1,
@@ -112,6 +186,32 @@ const styles = StyleSheet.create({
     color: colors.subtext,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  socialStrip: {
+    fontSize: fontSize.sm,
+    color: colors.streak,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  invitePrompt: {
+    fontSize: fontSize.sm,
+    color: colors.subtext,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  chestCta: {
+    backgroundColor: '#FFF8DC',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+  },
+  chestCtaText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: '#B8860B',
   },
   bottom: {
     paddingBottom: spacing.xl,

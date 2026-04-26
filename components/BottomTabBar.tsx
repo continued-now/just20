@@ -8,9 +8,10 @@ import { colors } from '../constants/theme';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_CONFIG: Record<string, { active: IconName; inactive: IconName; label: string }> = {
-  index:    { active: 'home',     inactive: 'home-outline',     label: 'Home'     },
-  streak:   { active: 'flame',    inactive: 'flame-outline',    label: 'Streak'   },
-  settings: { active: 'settings', inactive: 'settings-outline', label: 'Settings' },
+  index:    { active: 'home',        inactive: 'home-outline',        label: 'Home'    },
+  streak:   { active: 'flame',       inactive: 'flame-outline',       label: 'Streak'  },
+  squad:    { active: 'people',      inactive: 'people-outline',      label: 'Squad'   },
+  settings: { active: 'settings',    inactive: 'settings-outline',    label: 'Settings' },
 };
 
 export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderRadius: 20,
-    paddingHorizontal: 18,
+    paddingHorizontal: 14,
     paddingVertical: 6,
   },
   pillActive: {
@@ -109,7 +110,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   label: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: colors.subtext,
   },

@@ -15,11 +15,14 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { getStreak, getBestCompletedTime, getCompletedSetsToday, getUserSeed } from '../lib/db';
+import { awardWorkoutCoins } from '../lib/coins';
+import { syncCompletionToCloud } from '../lib/social';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
 
 const CARD_BG = '#0F0F0F';
+type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
   const { reps, duration } = useLocalSearchParams<{ reps: string; duration: string }>();
@@ -38,6 +41,7 @@ export default function CompletionScreen() {
   const [sharing, setSharing] = useState(false);
   const [setsToday, setSetsToday] = useState(1);
   const [dailyQuote, setDailyQuote] = useState('');
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
 
   // Hold the card for 2s before revealing buttons
   useEffect(() => {
@@ -60,6 +64,9 @@ export default function CompletionScreen() {
       if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
         setIsPB(true);
       }
+      // Award daily coins + milestone bonus, sync status to cloud
+      await awardWorkoutCoins(s.current);
+      syncCompletionToCloud(s.current); // fire-and-forget
     })();
   }, []);
 
@@ -71,24 +78,35 @@ export default function CompletionScreen() {
     }
   }, [streak]);
 
-  // Location reverse-geocode
-  useEffect(() => {
-    (async () => {
+  async function handleAddLocation() {
+    if (locationStatus === 'loading') return;
+    setLocationStatus('loading');
+    try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-        const [place] = await Location.reverseGeocodeAsync(loc.coords);
-        if (place) {
-          const parts = [
+      if (status !== 'granted') {
+        setLocationStatus('denied');
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      const [place] = await Location.reverseGeocodeAsync(loc.coords);
+      const parts = place
+        ? [
             place.district || place.subregion || place.street,
             place.city || place.region,
-          ].filter(Boolean);
-          if (parts.length) setLocationName(parts.join(', '));
-        }
-      } catch (_) {}
-    })();
-  }, []);
+          ].filter(Boolean)
+        : [];
+
+      if (parts.length) {
+        setLocationName(parts.join(', '));
+        setLocationStatus('added');
+      } else {
+        setLocationStatus('error');
+      }
+    } catch (_) {
+      setLocationStatus('error');
+    }
+  }
 
   async function handleInstagramShare() {
     if (!shotRef.current) return;
@@ -172,6 +190,24 @@ export default function CompletionScreen() {
       <View style={styles.actions}>
         {buttonsVisible ? (
           <>
+            {!locationName && (
+              <TouchableOpacity
+                style={styles.locationBtn}
+                onPress={handleAddLocation}
+                disabled={locationStatus === 'loading'}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.locationBtnText}>
+                  {locationStatus === 'loading'
+                    ? 'Adding location...'
+                    : locationStatus === 'denied'
+                    ? 'Location skipped'
+                    : locationStatus === 'error'
+                    ? 'Location unavailable'
+                    : 'Add location to card'}
+                </Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.igBtn, sharing && styles.igBtnDisabled]}
               onPress={handleInstagramShare}
@@ -351,6 +387,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '900',
     letterSpacing: 0.3,
+  },
+  locationBtn: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  locationBtnText: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   doAnotherBtn: {
     borderRadius: radius.md,

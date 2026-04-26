@@ -1,6 +1,7 @@
 import { SUPABASE_ENABLED, supabase } from './supabase';
 import { getOrCreateUser } from './user';
 import { getBuddyLinks, getBuddyLink, addBuddyLink } from './db';
+import { localDayKey } from './dates';
 
 export type BuddyStatus = {
   username: string;
@@ -15,7 +16,8 @@ export async function getBuddyStatuses(): Promise<BuddyStatus[]> {
   if (SUPABASE_ENABLED) {
     try {
       const user = await getOrCreateUser();
-      return supabase.getBuddyStatuses(user.deviceId);
+      const remote = await supabase.getBuddyStatuses(user.deviceId);
+    return remote.map(r => ({ ...r, inviteCode: '' }));
     } catch {
       // Fall through to local
     }
@@ -72,7 +74,7 @@ export async function syncCompletionToCloud(streakCurrent: number): Promise<void
   if (!SUPABASE_ENABLED) return;
   try {
     const user = await getOrCreateUser();
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDayKey();
     await supabase.updateStreakStatus(user.deviceId, streakCurrent, today);
   } catch { /* non-critical — fail silently */ }
 }
