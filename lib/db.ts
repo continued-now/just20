@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { localDayKey, localDaysBetween, offsetLocalDay, startOfLocalWeekKey } from './dates';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -56,6 +57,7 @@ export async function initDb(): Promise<void> {
   // Migrations for existing installs
   try { await db.execAsync('ALTER TABLE streak ADD COLUMN streak_repair_used_date TEXT'); } catch (_) {}
   try { await db.execAsync('ALTER TABLE streak ADD COLUMN user_seed INTEGER'); } catch (_) {}
+  try { await db.execAsync('ALTER TABLE coins ADD COLUMN last_milestone_bonus_date TEXT'); } catch (_) {}
   await db.runAsync(
     'UPDATE streak SET user_seed = ? WHERE id = 1 AND user_seed IS NULL',
     [Math.floor(Math.random() * 2147483647)]
@@ -74,13 +76,15 @@ export async function getUserSeed(): Promise<number> {
 
 export async function saveSession(reps: number, durationMs: number): Promise<void> {
   if (!db) return;
-  const today = todayStr();
+  const today = localDayKey();
   const completed = reps >= 20 ? 1 : 0;
-  await db.runAsync(
-    'INSERT INTO sessions (date, reps, duration_ms, completed) VALUES (?, ?, ?, ?)',
-    [today, reps, durationMs, completed]
-  );
-  if (completed) await updateStreak(today);
+  await db.withTransactionAsync(async () => {
+    await db!.runAsync(
+      'INSERT INTO sessions (date, reps, duration_ms, completed) VALUES (?, ?, ?, ?)',
+      [today, reps, durationMs, completed]
+    );
+    if (completed) await updateStreak(today);
+  });
 }
 
 async function updateStreak(today: string): Promise<void> {
@@ -96,23 +100,23 @@ async function updateStreak(today: string): Promise<void> {
   if (!s) return;
   if (s.last_completed_date === today) return;
 
-  const yesterday = offsetDay(today, -1);
+  const yesterday = offsetLocalDay(today, -1);
   let newCurrent = 1;
+  let newFreezeCount = s.freeze_count;
 
   if (s.last_completed_date === yesterday) {
     newCurrent = s.current + 1;
   } else if (s.last_completed_date) {
-    const daysMissed =
-      (new Date(today).getTime() - new Date(s.last_completed_date).getTime()) / 86400000;
+    const daysMissed = localDaysBetween(s.last_completed_date, today);
     if (daysMissed === 2 && s.freeze_count > 0) {
       newCurrent = s.current + 1;
-      await db.runAsync('UPDATE streak SET freeze_count = freeze_count - 1 WHERE id = 1');
+      newFreezeCount = s.freeze_count - 1;
     }
   }
 
   const newBest = Math.max(s.best, newCurrent);
   const earnedFreeze = newCurrent > 0 && newCurrent % 7 === 0;
-  const newFreezeCount = earnedFreeze ? Math.min(s.freeze_count + 1, 3) : s.freeze_count;
+  newFreezeCount = earnedFreeze ? Math.min(newFreezeCount + 1, 3) : newFreezeCount;
 
   await db.runAsync(
     `UPDATE streak
@@ -152,7 +156,7 @@ export async function getCompletedSetsToday(): Promise<number> {
   if (!db) return 0;
   const row = await db.getFirstAsync<{ count: number }>(
     'SELECT COUNT(*) as count FROM sessions WHERE date = ? AND completed = 1',
-    [todayStr()]
+    [localDayKey()]
   );
   return row?.count ?? 0;
 }
@@ -161,7 +165,7 @@ export async function isCompletedToday(): Promise<boolean> {
   if (!db) return false;
   const row = await db.getFirstAsync<{ count: number }>(
     'SELECT COUNT(*) as count FROM sessions WHERE date = ? AND completed = 1',
-    [todayStr()]
+    [localDayKey()]
   );
   return (row?.count ?? 0) > 0;
 }
@@ -176,10 +180,12 @@ export async function getBestCompletedTime(): Promise<number | null> {
 
 export async function getCalendarData(daysBack = 30): Promise<Record<string, boolean>> {
   if (!db) return {};
+  const startDay = offsetLocalDay(localDayKey(), -daysBack);
   const rows = await db.getAllAsync<{ date: string; completed: number }>(
     `SELECT date, MAX(completed) as completed FROM sessions
-     WHERE date >= date('now', '-${daysBack} days')
-     GROUP BY date`
+     WHERE date >= ?
+     GROUP BY date`,
+    [startDay]
   );
   const result: Record<string, boolean> = {};
   for (const row of rows) result[row.date] = row.completed === 1;
@@ -188,12 +194,7 @@ export async function getCalendarData(daysBack = 30): Promise<Record<string, boo
 
 export async function getCompletedDaysThisWeek(): Promise<number> {
   if (!db) return 0;
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon ...
-  const daysBack = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // days since Monday
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - daysBack);
-  const mondayStr = monday.toISOString().split('T')[0];
+  const mondayStr = startOfLocalWeekKey();
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(DISTINCT date) as count FROM sessions WHERE date >= ? AND completed = 1`,
     [mondayStr]
@@ -218,10 +219,8 @@ export async function getStreakRepairStatus(): Promise<{
   if (!row || !row.last_completed_date) return { eligible: false, previousStreak: 0 };
   if (row.current < 7) return { eligible: false, previousStreak: row.current };
 
-  const today = todayStr();
-  const daysMissed = Math.round(
-    (new Date(today).getTime() - new Date(row.last_completed_date).getTime()) / 86400000
-  );
+  const today = localDayKey();
+  const daysMissed = localDaysBetween(row.last_completed_date, today);
 
   const autoFreezeCovers = daysMissed === 2 && row.freeze_count > 0;
   if (autoFreezeCovers || daysMissed < 2 || daysMissed > 3) {
@@ -229,9 +228,7 @@ export async function getStreakRepairStatus(): Promise<{
   }
 
   if (row.streak_repair_used_date) {
-    const daysSinceRepair = Math.round(
-      (new Date(today).getTime() - new Date(row.streak_repair_used_date).getTime()) / 86400000
-    );
+    const daysSinceRepair = localDaysBetween(row.streak_repair_used_date, today);
     if (daysSinceRepair < 30) return { eligible: false, previousStreak: row.current };
   }
 
@@ -240,10 +237,11 @@ export async function getStreakRepairStatus(): Promise<{
 
 export async function repairStreak(): Promise<void> {
   if (!db) return;
-  const yesterday = offsetDay(todayStr(), -1);
+  const today = localDayKey();
+  const yesterday = offsetLocalDay(today, -1);
   await db.runAsync(
     'UPDATE streak SET last_completed_date = ?, streak_repair_used_date = ? WHERE id = 1',
-    [yesterday, todayStr()]
+    [yesterday, today]
   );
 }
 
@@ -339,22 +337,41 @@ export type CoinsData = {
   totalEarned: number;
   lastChestDate: string | null;
   lastDailyBonusDate: string | null;
+  lastMilestoneBonusDate: string | null;
 };
 
 export async function getCoins(): Promise<CoinsData> {
-  if (!db) return { balance: 0, totalEarned: 0, lastChestDate: null, lastDailyBonusDate: null };
+  if (!db) {
+    return {
+      balance: 0,
+      totalEarned: 0,
+      lastChestDate: null,
+      lastDailyBonusDate: null,
+      lastMilestoneBonusDate: null,
+    };
+  }
   const row = await db.getFirstAsync<{
     balance: number;
     total_earned: number;
     last_chest_date: string | null;
     last_daily_bonus_date: string | null;
+    last_milestone_bonus_date: string | null;
   }>('SELECT * FROM coins WHERE id = 1');
-  if (!row) return { balance: 0, totalEarned: 0, lastChestDate: null, lastDailyBonusDate: null };
+  if (!row) {
+    return {
+      balance: 0,
+      totalEarned: 0,
+      lastChestDate: null,
+      lastDailyBonusDate: null,
+      lastMilestoneBonusDate: null,
+    };
+  }
   return {
     balance: row.balance,
     totalEarned: row.total_earned,
     lastChestDate: row.last_chest_date,
     lastDailyBonusDate: row.last_daily_bonus_date,
+    lastMilestoneBonusDate: row.last_milestone_bonus_date,
   };
 }
 
@@ -376,7 +393,7 @@ export async function spendCoins(amount: number): Promise<boolean> {
 
 export async function claimDailyBonus(): Promise<number | null> {
   if (!db) return null;
-  const today = todayStr();
+  const today = localDayKey();
   const row = await db.getFirstAsync<{ last_daily_bonus_date: string | null }>(
     'SELECT last_daily_bonus_date FROM coins WHERE id = 1'
   );
@@ -389,22 +406,24 @@ export async function claimDailyBonus(): Promise<number | null> {
   return amount;
 }
 
+export async function claimMilestoneBonus(amount: number): Promise<number | null> {
+  if (!db) return null;
+  const today = localDayKey();
+  const row = await db.getFirstAsync<{ last_milestone_bonus_date: string | null }>(
+    'SELECT last_milestone_bonus_date FROM coins WHERE id = 1'
+  );
+  if (row?.last_milestone_bonus_date === today) return null;
+  await db.runAsync(
+    'UPDATE coins SET balance = balance + ?, total_earned = total_earned + ?, last_milestone_bonus_date = ? WHERE id = 1',
+    [amount, amount, today]
+  );
+  return amount;
+}
+
 export async function markChestClaimed(amount: number): Promise<void> {
   if (!db) return;
   await db.runAsync(
     'UPDATE coins SET balance = balance + ?, total_earned = total_earned + ?, last_chest_date = ? WHERE id = 1',
-    [amount, amount, todayStr()]
+    [amount, amount, localDayKey()]
   );
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function offsetDay(dateStr: string, offset: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().split('T')[0];
 }

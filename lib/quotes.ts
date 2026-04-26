@@ -1,3 +1,5 @@
+import { localDayKey } from './dates';
+
 const QUOTES = [
   "Every rep is a vote for who you're becoming.",
   "Discipline is choosing what you want most over what you want now.",
@@ -60,7 +62,7 @@ function hashCode(s: string): number {
 }
 
 export function getDailyQuote(userSeed: number): string {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDayKey();
   const idx = hashCode(`${today}-${userSeed}`) % QUOTES.length;
   return QUOTES[idx];
 }

@@ -3,11 +3,13 @@ import {
   earnCoins,
   spendCoins,
   claimDailyBonus,
+  claimMilestoneBonus,
   markChestClaimed,
   getCompletedDaysThisWeek,
   type CoinsData,
 } from './db';
 import { isMilestoneDay } from './milestones';
+import { localDayKey } from './dates';
 
 export { type CoinsData };
 
@@ -39,8 +41,8 @@ export async function awardWorkoutCoins(streakDay: number): Promise<{
 
   // Milestone bonus (50 coins on milestone days)
   if (isMilestoneDay(streakDay)) {
-    await earnCoins(50);
-    milestone = 50;
+    const claimed = await claimMilestoneBonus(50);
+    if (claimed !== null) milestone = claimed;
   }
 
   return { daily, milestone, total: daily + milestone };
@@ -53,7 +55,7 @@ export async function isChestAvailable(): Promise<boolean> {
   if (now.getDay() !== 0) return false;
 
   const coins = await getCoins();
-  const today = now.toISOString().split('T')[0];
+  const today = localDayKey(now);
 
   // Already claimed today
   if (coins.lastChestDate === today) return false;

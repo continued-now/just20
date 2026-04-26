@@ -19,7 +19,7 @@ export default function SettingsScreen() {
 
   async function handleClearNudges() {
     await cancelAllNudges();
-    Alert.alert('Nudges cleared', 'All scheduled nudges cancelled.');
+    Alert.alert('Nudges cleared', 'Daily nudges cancelled. Other reminders stay scheduled.');
   }
 
   return (

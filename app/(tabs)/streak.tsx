@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { getCalendarData, getStreak } from '../../lib/db';
+import { localDayKey } from '../../lib/dates';
 import { getNextMilestone, MILESTONE_DAYS } from '../../lib/milestones';
 
 type StreakData = {
@@ -36,7 +37,7 @@ export default function StreakScreen() {
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
-    const key = d.toISOString().split('T')[0];
+    const key = localDayKey(d);
     return {
       key,
       label: d.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -135,7 +136,7 @@ export default function StreakScreen() {
             {Array.from({ length: 30 }, (_, i) => {
               const d = new Date();
               d.setDate(d.getDate() - (29 - i));
-              const key = d.toISOString().split('T')[0];
+              const key = localDayKey(d);
               return (
                 <View
                   key={key}

@@ -4,6 +4,7 @@ const START_HOUR = 7;
 const END_HOUR = 22;
 const NUDGE_COUNT = 20;
 const STREAK_AT_RISK_ID = 'streak-at-risk';
+const NUDGE_TYPE = 'nudge';
 
 const TIERS: { minRemaining: number; messages: string[] }[] = [
   {
@@ -53,16 +54,21 @@ function pickMessage(messages: string[], date: Date): string {
   return msg.replace('[TIME]', t);
 }
 
+function isNudgeNotification(notification: Notifications.NotificationRequest): boolean {
+  const data = notification.content.data;
+  return data?.type === NUDGE_TYPE || typeof data?.nudgeIndex === 'number';
+}
+
 export async function requestPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
 }
 
 export async function scheduleNudges(): Promise<void> {
-  // Cancel all nudge notifications but preserve any streak-at-risk notification
+  // Cancel old nudge notifications while preserving streak/social notifications.
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const n of scheduled) {
-    if (n.identifier !== STREAK_AT_RISK_ID) {
+    if (isNudgeNotification(n)) {
       await Notifications.cancelScheduledNotificationAsync(n.identifier);
     }
   }
@@ -90,7 +96,7 @@ export async function scheduleNudges(): Promise<void> {
         title: 'just20',
         body: pickMessage(t.messages, times[i]),
         sound: remaining <= 5 ? 'default' : undefined,
-        data: { nudgeIndex: i, remaining },
+        data: { type: NUDGE_TYPE, nudgeIndex: i, remaining },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -101,7 +107,12 @@ export async function scheduleNudges(): Promise<void> {
 }
 
 export async function cancelAllNudges(): Promise<void> {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const n of scheduled) {
+    if (isNudgeNotification(n)) {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    }
+  }
 }
 
 export async function scheduleStreakAtRiskNotification(currentStreak: number): Promise<void> {
@@ -139,7 +150,7 @@ export async function scheduleStreakAtRiskNotification(currentStreak: number): P
 
 export async function getRemainingNudgeCount(): Promise<number> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  return scheduled.length;
+  return scheduled.filter(isNudgeNotification).length;
 }
 
 export function setupNotificationHandler(): void {
