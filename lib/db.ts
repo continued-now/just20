@@ -58,6 +58,9 @@ export async function initDb(): Promise<void> {
   try { await db.execAsync('ALTER TABLE streak ADD COLUMN streak_repair_used_date TEXT'); } catch (_) {}
   try { await db.execAsync('ALTER TABLE streak ADD COLUMN user_seed INTEGER'); } catch (_) {}
   try { await db.execAsync('ALTER TABLE coins ADD COLUMN last_milestone_bonus_date TEXT'); } catch (_) {}
+  try { await db.execAsync('ALTER TABLE user_profile ADD COLUMN onboarding_complete INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+  // Existing users who already have a username have effectively "done" onboarding
+  await db.runAsync('UPDATE user_profile SET onboarding_complete = 1 WHERE username IS NOT NULL AND onboarding_complete = 0');
   await db.runAsync(
     'UPDATE streak SET user_seed = ? WHERE id = 1 AND user_seed IS NULL',
     [Math.floor(Math.random() * 2147483647)]
@@ -251,6 +254,7 @@ export type UserProfile = {
   deviceId: string;
   username: string | null;
   inviteCode: string;
+  onboardingComplete: boolean;
 };
 
 export async function getUserProfile(): Promise<UserProfile | null> {
@@ -259,20 +263,32 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     device_id: string;
     username: string | null;
     invite_code: string;
-  }>('SELECT device_id, username, invite_code FROM user_profile WHERE id = 1');
+    onboarding_complete: number | null;
+  }>('SELECT device_id, username, invite_code, onboarding_complete FROM user_profile WHERE id = 1');
   if (!row) return null;
-  return { deviceId: row.device_id, username: row.username, inviteCode: row.invite_code };
+  return {
+    deviceId: row.device_id,
+    username: row.username,
+    inviteCode: row.invite_code,
+    onboardingComplete: (row.onboarding_complete ?? 0) === 1,
+  };
 }
 
 export async function setUserProfile(profile: UserProfile): Promise<void> {
   if (!db) return;
   await db.runAsync(
-    `INSERT INTO user_profile (id, device_id, username, invite_code)
-     VALUES (1, ?, ?, ?)
+    `INSERT INTO user_profile (id, device_id, username, invite_code, onboarding_complete)
+     VALUES (1, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET device_id=excluded.device_id,
-       username=excluded.username, invite_code=excluded.invite_code`,
-    [profile.deviceId, profile.username, profile.inviteCode]
+       username=excluded.username, invite_code=excluded.invite_code,
+       onboarding_complete=excluded.onboarding_complete`,
+    [profile.deviceId, profile.username, profile.inviteCode, profile.onboardingComplete ? 1 : 0]
   );
+}
+
+export async function markOnboardingComplete(): Promise<void> {
+  if (!db) return;
+  await db.runAsync('UPDATE user_profile SET onboarding_complete = 1 WHERE id = 1');
 }
 
 // ─── Buddy links ─────────────────────────────────────────────────────────────

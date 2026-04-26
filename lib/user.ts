@@ -1,4 +1,6 @@
-import { getUserProfile, setUserProfile, type UserProfile } from './db';
+import { getUserProfile, setUserProfile, markOnboardingComplete, type UserProfile } from './db';
+
+export { markOnboardingComplete };
 
 function generateDeviceId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -22,6 +24,7 @@ export async function getOrCreateUser(): Promise<UserProfile> {
     deviceId: generateDeviceId(),
     username: null,
     inviteCode: generateInviteCode(),
+    onboardingComplete: false,
   };
   await setUserProfile(fresh);
   return fresh;

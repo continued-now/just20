@@ -18,9 +18,11 @@ export default function RootLayout() {
       await initDb();
       setupNotificationHandler();
 
-      // Ensure a user profile exists; redirect to setup if no username yet
+      // New users see onboarding; existing users without username see profile-setup
       const user = await getOrCreateUser();
-      if (!user.username) {
+      if (!user.onboardingComplete) {
+        setTimeout(() => router.replace('/onboarding'), 0);
+      } else if (!user.username) {
         setTimeout(() => router.replace('/profile-setup'), 0);
       }
 
@@ -60,6 +62,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="chest-open"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="onboarding"
+          options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }}
         />
       </Stack>
     </>

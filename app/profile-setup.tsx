@@ -41,6 +41,9 @@ export default function ProfileSetupScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+        <Text style={styles.backBtnText}>← Back</Text>
+      </TouchableOpacity>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <KeyboardAvoidingView
           style={styles.container}
@@ -89,6 +92,16 @@ export default function ProfileSetupScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  backBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+  },
+  backBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.subtext,
+  },
   container: { flex: 1, paddingHorizontal: spacing.lg },
   content: {
     flex: 1,
