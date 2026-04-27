@@ -18,3 +18,13 @@ Cross-platform iOS + Android app built with Expo (React Native). On-device pose 
 - expo-sqlite + drizzle-orm
 - NativeWind (Tailwind for RN)
 - react-native-reanimated 3 + Lottie
+
+## Quick start
+
+```sh
+npm ci
+npm run typecheck
+npm run start
+```
+
+This project uses an Expo development build, so open the Metro URL or QR code with a built dev client. For native iOS builds, install CocoaPods first and then run `cd ios && pod install`.

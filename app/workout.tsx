@@ -1,10 +1,11 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, LayoutChangeEvent, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Camera,
+  CameraRuntimeError,
   useCameraDevice,
   useCameraPermission,
   useFrameProcessor,
@@ -14,11 +15,115 @@ import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useSharedValue, Worklets } from 'react-native-worklets-core';
 import { RepCounter } from '../components/RepCounter';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
-import { analyzePose, parseMoveNetOutput } from '../lib/poseDetection';
+import {
+  KP,
+  analyzePose,
+  parseMoveNetOutput,
+  type Keypoint,
+  type PushupPhase,
+} from '../lib/poseDetection';
 import { saveSession, setSetting } from '../lib/db';
 import { cancelAllNudges } from '../lib/notifications';
 
 const TARGET = 20;
+const MIN_OVERLAY_SCORE = 0.2;
+const SKELETON_LINKS: Array<[number, number]> = [
+  [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
+  [KP.LEFT_SHOULDER, KP.LEFT_ELBOW],
+  [KP.LEFT_ELBOW, KP.LEFT_WRIST],
+  [KP.RIGHT_SHOULDER, KP.RIGHT_ELBOW],
+  [KP.RIGHT_ELBOW, KP.RIGHT_WRIST],
+  [KP.LEFT_SHOULDER, KP.LEFT_HIP],
+  [KP.RIGHT_SHOULDER, KP.RIGHT_HIP],
+  [KP.LEFT_HIP, KP.RIGHT_HIP],
+  [KP.LEFT_HIP, KP.LEFT_KNEE],
+  [KP.LEFT_KNEE, KP.LEFT_ANKLE],
+  [KP.RIGHT_HIP, KP.RIGHT_KNEE],
+  [KP.RIGHT_KNEE, KP.RIGHT_ANKLE],
+];
+
+type PoseOverlayFrame = {
+  keypoints: Keypoint[];
+  phase: PushupPhase;
+  feedback: string;
+  confidence: number;
+  elbowAngle: number;
+};
+
+type OverlaySize = {
+  width: number;
+  height: number;
+};
+
+function PoseSkeleton({
+  pose,
+  size,
+  mirrored,
+}: {
+  pose: PoseOverlayFrame | null;
+  size: OverlaySize;
+  mirrored: boolean;
+}) {
+  if (!pose || size.width <= 0 || size.height <= 0) return null;
+
+  const toPoint = (kp: Keypoint) => ({
+    x: (mirrored ? 1 - kp.x : kp.x) * size.width,
+    y: kp.y * size.height,
+    score: kp.score,
+  });
+
+  return (
+    <>
+      {SKELETON_LINKS.map(([fromIndex, toIndex]) => {
+        const from = pose.keypoints[fromIndex];
+        const to = pose.keypoints[toIndex];
+        if (!from || !to || from.score < MIN_OVERLAY_SCORE || to.score < MIN_OVERLAY_SCORE) {
+          return null;
+        }
+
+        const start = toPoint(from);
+        const end = toPoint(to);
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+
+        return (
+          <View
+            key={`${fromIndex}-${toIndex}`}
+            style={[
+              styles.skeletonLine,
+              {
+                left: (start.x + end.x) / 2 - length / 2,
+                top: (start.y + end.y) / 2 - 2,
+                width: length,
+                transform: [{ rotateZ: `${angle}rad` }],
+              },
+            ]}
+          />
+        );
+      })}
+
+      {pose.keypoints.map((kp, index) => {
+        if (kp.score < MIN_OVERLAY_SCORE) return null;
+        const point = toPoint(kp);
+        return (
+          <View
+            key={index}
+            style={[
+              styles.skeletonJoint,
+              kp.score < 0.45 && styles.skeletonJointLow,
+              {
+                left: point.x - 5,
+                top: point.y - 5,
+              },
+            ]}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 const MILESTONE_MESSAGES: Record<number, string> = {
   5: 'Keep going!',
@@ -59,7 +164,10 @@ function PaceGraph({ timestamps }: { timestamps: number[] }) {
 export default function WorkoutScreen() {
   const router = useRouter();
   const { hasPermission, requestPermission } = useCameraPermission();
-  const device = useCameraDevice('front');
+  const frontDevice = useCameraDevice('front');
+  const backDevice = useCameraDevice('back');
+  const device = frontDevice ?? backDevice;
+  const usingFallbackCamera = !frontDevice && !!backDevice;
   const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
   const { resize } = useResizePlugin();
 
@@ -72,6 +180,9 @@ export default function WorkoutScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [repTimestamps, setRepTimestamps] = useState<number[]>([]);
   const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
+  const [poseFrame, setPoseFrame] = useState<PoseOverlayFrame | null>(null);
+  const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
@@ -85,6 +196,7 @@ export default function WorkoutScreen() {
   const lastSentCount = useSharedValue(-1);
   const lastFeedbackTime = useSharedValue(0);
   const isKneeDrop = useSharedValue(false);
+  const lastPoseTime = useSharedValue(0);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -100,8 +212,16 @@ export default function WorkoutScreen() {
   }, [firstRepTime, finished]);
 
   // Stable JS-thread callbacks — created once, never re-created
-  const onRepsUpdate = useRef(
-    Worklets.createRunOnJS((count: number, fb: string) => {
+  const onTrackingUpdate = useRef(
+    Worklets.createRunOnJS((
+      kps: Keypoint[],
+      phase: PushupPhase,
+      confidence: number,
+      elbowAngle: number,
+      count: number,
+      fb: string
+    ) => {
+      setPoseFrame({ keypoints: kps, phase, confidence, elbowAngle, feedback: fb });
       setReps(count);
       setFeedback(fb);
       if (count >= TARGET && !finishedRef.current) {
@@ -161,7 +281,7 @@ export default function WorkoutScreen() {
   const frameProcessor = useFrameProcessor(
     (frame) => {
       'worklet';
-      if (!isStarted.value || model.state !== 'loaded' || !model.model) return;
+      if (model.state !== 'loaded' || !model.model) return;
 
       const resized = resize(frame, {
         scale: { width: 192, height: 192 },
@@ -172,8 +292,17 @@ export default function WorkoutScreen() {
       const outputs = model.model.runSync([resized]);
       const raw = outputs[0] as Float32Array;
       const kps = parseMoveNetOutput(raw);
-      const { phase, feedback: fb } = analyzePose(kps);
+      const analysis = analyzePose(kps);
+      const { phase, feedback: fb, confidence, elbowAngle } = analysis;
       const now = Date.now();
+
+      if (!isStarted.value) {
+        if (now - lastPoseTime.value > 120) {
+          lastPoseTime.value = now;
+          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, fb);
+        }
+        return;
+      }
 
       // Knee-drop detection: knees at floor level (near wrist Y) + hip sagging
       if (phase === 'down') {
@@ -214,19 +343,44 @@ export default function WorkoutScreen() {
           wentDown.value = false;
           lastSentCount.value = repCount.value;
           lastFeedbackTime.value = now;
-          onRepsUpdate(repCount.value, 'Great rep!');
+          lastPoseTime.value = now;
+          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, 'Great rep!');
         }
       } else {
         const countChanged = repCount.value !== lastSentCount.value;
-        if (countChanged || now - lastFeedbackTime.value > 500) {
+        const poseStale = now - lastPoseTime.value > 120;
+        if (countChanged || now - lastFeedbackTime.value > 500 || poseStale) {
           lastSentCount.value = repCount.value;
           lastFeedbackTime.value = now;
-          onRepsUpdate(repCount.value, fb);
+          lastPoseTime.value = now;
+          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, fb);
         }
       }
     },
-    [model, isStarted, wentDown, lastDownTime, repCount, lastSentCount, lastFeedbackTime, onRepsUpdate, onNoRep, resize, isKneeDrop]
+    [
+      model,
+      isStarted,
+      wentDown,
+      lastDownTime,
+      repCount,
+      lastSentCount,
+      lastFeedbackTime,
+      lastPoseTime,
+      onTrackingUpdate,
+      onNoRep,
+      resize,
+      isKneeDrop,
+    ]
   );
+
+  function handleOverlayLayout(event: LayoutChangeEvent) {
+    const { width, height } = event.nativeEvent.layout;
+    setOverlaySize({ width, height });
+  }
+
+  function handleCameraError(error: CameraRuntimeError) {
+    setCameraError(error.message);
+  }
 
   function handleStart() {
     wentDown.value = false;
@@ -235,6 +389,7 @@ export default function WorkoutScreen() {
     lastSentCount.value = -1;
     lastFeedbackTime.value = 0;
     isKneeDrop.value = false;
+    lastPoseTime.value = 0;
     finishedRef.current = false;
     prevRepsRef.current = 0;
     startTimeRef.current = Date.now();
@@ -322,10 +477,18 @@ export default function WorkoutScreen() {
           isActive={!finished}
           frameProcessor={frameProcessor}
           pixelFormat="yuv"
+          onError={handleCameraError}
         />
       ) : (
-        <View style={styles.cameraFallback} />
+        <View style={styles.cameraFallback}>
+          <Text style={styles.cameraFallbackTitle}>No camera found</Text>
+          <Text style={styles.cameraFallbackText}>Connect a camera or enable one in the emulator.</Text>
+        </View>
       )}
+
+      <View style={styles.poseLayer} pointerEvents="none" onLayout={handleOverlayLayout}>
+        <PoseSkeleton pose={poseFrame} size={overlaySize} mirrored={device?.position === 'front'} />
+      </View>
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
@@ -350,6 +513,20 @@ export default function WorkoutScreen() {
           >
             {activeFeedback}
           </Text>
+          {poseFrame && (
+            <View style={styles.poseReadout}>
+              <Text style={styles.poseReadoutText}>
+                {poseFrame.phase.toUpperCase()} · {Math.round(poseFrame.confidence * 100)}% ·{' '}
+                {Math.round(poseFrame.elbowAngle)}°
+              </Text>
+            </View>
+          )}
+          {usingFallbackCamera && (
+            <Text style={styles.cameraNote}>Using back camera fallback</Text>
+          )}
+          {cameraError && (
+            <Text style={styles.cameraNote}>{cameraError}</Text>
+          )}
         </View>
 
         <View style={styles.bottom}>
@@ -394,7 +571,40 @@ export default function WorkoutScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
-  cameraFallback: { ...StyleSheet.absoluteFillObject, backgroundColor: '#1a1a1a' },
+  cameraFallback: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.sm,
+  },
+  cameraFallbackTitle: { color: '#FFF', fontSize: fontSize.lg, fontWeight: '900' },
+  cameraFallbackText: { color: 'rgba(255,255,255,0.72)', fontSize: fontSize.sm, textAlign: 'center' },
+  poseLayer: { ...StyleSheet.absoluteFillObject },
+  skeletonLine: {
+    position: 'absolute',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(60, 179, 113, 0.9)',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  skeletonJoint: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: colors.success,
+  },
+  skeletonJointLow: {
+    opacity: 0.55,
+    borderColor: '#FFE082',
+  },
   safe: { flex: 1, backgroundColor: colors.bg },
   overlay: { flex: 1, justifyContent: 'space-between' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
@@ -436,6 +646,25 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.5,
     color: '#FFF',
+  },
+  poseReadout: {
+    marginTop: spacing.sm,
+    backgroundColor: 'rgba(0,0,0,0.58)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  poseReadoutText: {
+    color: '#FFF',
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+  },
+  cameraNote: {
+    marginTop: spacing.xs,
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   bottom: {
     backgroundColor: 'rgba(0,0,0,0.65)',

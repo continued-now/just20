@@ -101,6 +101,7 @@ export function analyzePose(kps: Keypoint[]): PoseAnalysis {
 // Parse raw TFLite output tensor into keypoints
 // MoveNet output shape: [1, 1, 17, 3] as flat Float32Array
 export function parseMoveNetOutput(output: Float32Array): Keypoint[] {
+  'worklet';
   const kps: Keypoint[] = [];
   for (let i = 0; i < 17; i++) {
     const base = i * 3;
