@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="An interactive just20-jake landing page prototype built around the 20-rep game loop."
+    />
+    <meta name="theme-color" content="#fff7d6" />
+    <title>just20-jake | Try the 20-rep loop</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="blob blob-a" aria-hidden="true"></div>
+    <div class="blob blob-b" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="nav">
+      <a class="brand" href="#top" aria-label="just20-jake home">
+        <span class="brand-badge">20</span>
+        <span>just20-jake</span>
+      </a>
+      <nav aria-label="Landing navigation">
+        <a href="#game">Try it</a>
+        <a href="#receipt">Receipt</a>
+        <a href="#waitlist">Waitlist</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Playable landing mockup</p>
+          <h1>Do 20 before this little guy gets dramatic.</h1>
+          <p class="lede">
+            Tap through a tiny version of the Just20 loop: reps get counted, XP changes,
+            the streak pet reacts, and your proof card gets generated on the spot.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#game">Try the 20-rep loop</a>
+            <a class="button secondary" href="#receipt">See proof card</a>
+          </div>
+        </div>
+
+        <aside class="phone-shell" aria-label="Interactive app preview">
+          <div class="phone-top">
+            <span>just20</span>
+            <span class="window-pill" id="windowPill">8am window</span>
+          </div>
+          <div class="pet-orbit">
+            <div class="pet-face" id="petFace" aria-hidden="true">
+              <span class="eye eye-left"></span>
+              <span class="eye eye-right"></span>
+              <span class="mouth"></span>
+            </div>
+          </div>
+          <p class="pet-status" id="petStatus">Waiting politely. For now.</p>
+          <div class="phone-progress" aria-hidden="true">
+            <span id="phoneProgress"></span>
+          </div>
+          <div class="phone-stats">
+            <strong id="phoneRepCount">0 / 20</strong>
+            <span id="phoneXp">+150 XP if you start clean</span>
+          </div>
+        </aside>
+      </section>
+
+      <section id="game" class="game-section">
+        <div class="section-heading">
+          <p class="eyebrow">Tap reps, feel the loop</p>
+          <h2>The landing page should make the habit playable.</h2>
+        </div>
+
+        <div class="game-grid">
+          <article class="rep-game">
+            <div class="rep-header">
+              <div>
+                <span class="mini-label">Today's promise</span>
+                <h3>20 clean reps</h3>
+              </div>
+              <button class="reset-button" id="resetRepGame" type="button">Reset</button>
+            </div>
+
+            <button class="rep-button" id="repButton" type="button" aria-describedby="repHelp">
+              <span id="repButtonNumber">0</span>
+              <small>Tap or press space</small>
+            </button>
+            <p id="repHelp" class="rep-help">Every tap simulates one counted pushup. Finish 20 to unlock a receipt.</p>
+
+            <div class="rep-track" aria-label="Rep progress">
+              <span id="repTrackFill"></span>
+            </div>
+
+            <div class="rep-dots" id="repDots" aria-hidden="true"></div>
+          </article>
+
+          <article class="control-panel">
+            <span class="mini-label">Choose your chaos</span>
+            <h3>How did you show up?</h3>
+            <div class="mode-list" role="group" aria-label="Completion timing">
+              <button class="mode active" type="button" data-mode="perfect" data-xp="150" data-label="Perfect time">
+                <strong>Perfect time</strong>
+                <span>Maximum snack energy.</span>
+              </button>
+              <button class="mode" type="button" data-mode="late" data-xp="95" data-label="3 reminders later">
+                <strong>3 reminders</strong>
+                <span>Still alive. Slightly judged.</span>
+              </button>
+              <button class="mode" type="button" data-mode="panic" data-xp="35" data-label="12 reminders later">
+                <strong>12 reminders</strong>
+                <span>Technically counts. Barely.</span>
+              </button>
+            </div>
+
+            <div class="xp-meter">
+              <div class="xp-meter-top">
+                <span id="xpModeLabel">Perfect time</span>
+                <strong id="xpValue">150 XP</strong>
+              </div>
+              <div class="xp-bar" aria-hidden="true">
+                <span id="xpFill"></span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="receipt" class="receipt-section">
+        <div class="receipt-copy">
+          <p class="eyebrow">Proof card generator</p>
+          <h2>Make the win look worth sending.</h2>
+          <p>
+            The share moment is where Just20 can spread. This mock lets the visitor
+            personalize a proof card and see why finishing should feel collectible.
+          </p>
+
+          <form class="receipt-form" id="receiptForm">
+            <label>
+              <span>Name</span>
+              <input id="nameInput" type="text" value="Jake" maxlength="18" />
+            </label>
+            <label>
+              <span>Streak day</span>
+              <input id="streakInput" type="number" value="7" min="1" max="999" />
+            </label>
+          </form>
+        </div>
+
+        <article class="proof-card" id="proofCard">
+          <div class="proof-top">
+            <span>just20 receipt</span>
+            <span id="proofMode">Perfect time</span>
+          </div>
+          <div class="proof-body">
+            <span class="proof-reps" id="proofReps">0</span>
+            <span class="proof-label">pushups counted</span>
+          </div>
+          <div class="proof-bottom">
+            <strong id="proofName">Jake</strong>
+            <span id="proofStreak">Day 7 locked</span>
+            <span id="proofXp">+150 XP</span>
+          </div>
+          <p class="proof-caption" id="proofCaption">Finish the demo to unlock the share line.</p>
+        </article>
+      </section>
+
+      <section class="calibration-demo">
+        <div>
+          <p class="eyebrow">Camera trust moment</p>
+          <h2>A calibration demo can teach the app without a lecture.</h2>
+        </div>
+        <div class="calibration-card">
+          <div class="camera-box" id="cameraBox">
+            <div class="frame-guide"></div>
+            <div class="demo-skeleton off" id="demoSkeleton">
+              <span class="sk sk-head"></span>
+              <span class="sk sk-body"></span>
+              <span class="sk sk-arm-a"></span>
+              <span class="sk sk-arm-b"></span>
+              <span class="sk sk-leg-a"></span>
+              <span class="sk sk-leg-b"></span>
+            </div>
+          </div>
+          <div class="calibration-copy">
+            <strong id="calibrationTitle">Camera is guessing</strong>
+            <span id="calibrationText">Tap calibrate to snap the body into frame and raise confidence.</span>
+            <button class="button primary compact" id="calibrateButton" type="button">Calibrate</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="waitlist" class="waitlist">
+        <div class="waitlist-card">
+          <p class="eyebrow">Early squad</p>
+          <h2>Want this version?</h2>
+          <p>This is just a mockup, but the interaction style is ready to become the main landing hook.</p>
+          <form id="waitlistForm" class="waitlist-form">
+            <input id="emailInput" type="email" placeholder="you@example.com" required />
+            <button class="button primary" type="submit">Save local spot</button>
+          </form>
+          <p class="form-status" id="formStatus" role="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>just20-jake landing2</span>
+      <span>Tap. Count. Flex. Repeat.</span>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

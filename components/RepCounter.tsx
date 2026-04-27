@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedText = Animated.Text as any;
-import { colors, fontSize } from '../constants/theme';
+import { fontSize } from '../constants/theme';
 
 type Props = {
   count: number;
@@ -43,14 +43,14 @@ const styles = StyleSheet.create({
   count: {
     fontSize: 80,
     fontWeight: '900',
-    color: colors.text,
+    color: '#FFF',
     lineHeight: 96,
     includeFontPadding: false,
   },
   target: {
     fontSize: fontSize.xl,
     fontWeight: '600',
-    color: colors.subtext,
+    color: 'rgba(255,255,255,0.68)',
     paddingBottom: 12,
   },
 });

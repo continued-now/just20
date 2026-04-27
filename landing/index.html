@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="just20-jake makes 20 daily pushups feel like a tiny fitness game with camera counting, XP, nudges, and streak pressure."
+    />
+    <meta property="og:title" content="just20-jake | Keep your pushup streak happy." />
+    <meta
+      property="og:description"
+      content="A friendly streak game built around one tiny promise: 20 pushups every day."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#f5f1e7" />
+    <title>just20-jake | Keep your pushup streak happy.</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <div class="cursor-glow" aria-hidden="true"></div>
+
+    <header class="nav">
+      <a class="brand" href="#top" aria-label="just20-jake home">
+        <span class="brand-mark">20</span>
+        <span>just20-jake</span>
+      </a>
+      <nav class="nav-links" aria-label="Landing page navigation">
+        <a href="#mechanics">Mechanics</a>
+        <a href="#tracking">Tracking</a>
+        <a href="#xp">XP</a>
+      </nav>
+      <a class="nav-cta" href="#waitlist">Join waitlist</a>
+    </header>
+
+    <main id="top">
+      <section class="hero section-grid">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">Your tiny daily quest</p>
+          <h1>Keep your pushup streak happy.</h1>
+          <p class="hero-sub">
+            Pick a 10-minute window. Do 20 pushups. The camera counts, XP pops,
+            and your streak buddy gets adorably dramatic if you wander off.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#waitlist">Start the streak</a>
+            <a class="button ghost" href="#mechanics">How it works</a>
+          </div>
+          <div class="proof-strip" aria-label="Product highlights">
+            <span>Camera-counted reps</span>
+            <span>10-minute quest window</span>
+            <span>XP snacks for showing up</span>
+          </div>
+        </div>
+
+        <div class="hero-stage reveal" aria-label="App preview mockup">
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="phone">
+            <div class="phone-top">
+              <span>just20</span>
+              <span class="pill">8am</span>
+            </div>
+            <div class="mascot-face" aria-hidden="true">
+              <span class="eye left"></span>
+              <span class="eye right"></span>
+              <span class="mouth"></span>
+            </div>
+            <p class="phone-status">8am quest + gentle chase mode</p>
+            <button class="phone-cta" type="button">START TODAY -></button>
+            <div class="phone-tabs" aria-hidden="true">
+              <span class="tab active">Home</span>
+              <span class="tab">Streak</span>
+              <span class="tab">Squad</span>
+            </div>
+          </div>
+          <div class="floating-card score-card">
+            <span class="card-label">Streak buddy</span>
+            <strong>0 / 20</strong>
+            <small>waiting nicely</small>
+          </div>
+          <div class="floating-card xp-card">
+            <span class="card-label">Perfect timing</span>
+            <strong>+150 XP</strong>
+            <small>streak snack</small>
+          </div>
+        </div>
+      </section>
+
+      <section id="mechanics" class="mechanics reveal">
+        <div class="section-heading">
+          <p class="eyebrow">The game loop</p>
+          <h2>A tiny quest your body can actually finish.</h2>
+        </div>
+        <div class="loop-grid">
+          <article class="loop-card">
+            <span class="step">01</span>
+            <h3>Pick quest time</h3>
+            <p>Choose one daily 10-minute window. It is small enough to feel impossible to dodge.</p>
+          </article>
+          <article class="loop-card hot">
+            <span class="step">02</span>
+            <h3>Get nudged</h3>
+            <p>If you miss the window, reminders start tapping. Cute at first. Less cute later.</p>
+          </article>
+          <article class="loop-card">
+            <span class="step">03</span>
+            <h3>Count the reps</h3>
+            <p>The camera preview shows joint tracking, so the win feels earned instead of guessed.</p>
+          </article>
+          <article class="loop-card">
+            <span class="step">04</span>
+            <h3>Feed the streak</h3>
+            <p>XP, squads, milestones, and proof cards turn one tiny workout into a daily ritual.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="tracking" class="tracking section-grid">
+        <div class="camera-panel reveal">
+          <div class="camera-frame">
+            <div class="skeleton">
+              <span class="joint head"></span>
+              <span class="joint shoulder-a"></span>
+              <span class="joint shoulder-b"></span>
+              <span class="joint elbow-a"></span>
+              <span class="joint elbow-b"></span>
+              <span class="joint wrist-a"></span>
+              <span class="joint wrist-b"></span>
+              <span class="bone b1"></span>
+              <span class="bone b2"></span>
+              <span class="bone b3"></span>
+              <span class="bone b4"></span>
+            </div>
+            <div class="tracking-readout">
+              <span>DOWN</span>
+              <strong>92%</strong>
+              <span>elbow 74 deg</span>
+            </div>
+          </div>
+        </div>
+        <div class="tracking-copy reveal">
+          <p class="eyebrow">Camera buddy</p>
+          <h2>It counts the pushup so you can chase the streak.</h2>
+          <p>
+            The workout screen is built for live body tracking: a friendly skeleton overlay, a calibration button when
+            your body needs help being seen, and multi-person handling that keeps the main player first.
+          </p>
+          <div class="feature-list">
+            <div>
+              <strong>Calibration button</strong>
+              <span>A simple rescue button when the camera gets confused.</span>
+            </div>
+            <div>
+              <strong>Main player first</strong>
+              <span>Nearby people do not steal the rep counter.</span>
+            </div>
+            <div>
+              <strong>Webcam-friendly testing</strong>
+              <span>Local dev can preview the camera path without phone juggling.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="xp" class="xp-section reveal">
+        <div class="xp-copy">
+          <p class="eyebrow">XP treats</p>
+          <h2>Show up early. Feed the streak.</h2>
+          <p>
+            On-time pushups get the biggest XP snack. Every reminder trims the reward,
+            so procrastination starts to feel weirdly expensive.
+          </p>
+        </div>
+        <div class="xp-simulator" aria-label="XP reward simulator">
+          <div class="meter">
+            <div class="meter-fill" id="xpFill"></div>
+          </div>
+          <div class="xp-output">
+            <span id="xpLabel">Perfect time</span>
+            <strong id="xpValue">150 XP</strong>
+          </div>
+          <div class="xp-buttons">
+            <button class="active" type="button" data-xp="150" data-label="Perfect time" aria-pressed="true">
+              Perfect time
+            </button>
+            <button type="button" data-xp="95" data-label="3 reminders later" aria-pressed="false">3 reminders</button>
+            <button type="button" data-xp="35" data-label="12 reminders later" aria-pressed="false">12 reminders</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="share-loop reveal">
+        <div>
+          <p class="eyebrow">Social loop</p>
+          <h2>A tiny proof card begging to be sent.</h2>
+        </div>
+        <div class="share-cards">
+          <article>
+            <span>Streak pet</span>
+            <strong>Keep the little guy thriving.</strong>
+          </article>
+          <article>
+            <span>Squad code</span>
+            <strong>Pull friends in before they can think.</strong>
+          </article>
+          <article>
+            <span>Proof card</span>
+            <strong>Make the daily win feel collectible.</strong>
+          </article>
+        </div>
+      </section>
+
+      <section id="waitlist" class="waitlist reveal">
+        <div class="waitlist-card">
+          <p class="eyebrow">Early squad</p>
+          <h2>Join before the streak pets get competitive.</h2>
+          <p>Drop an email for build access, product updates, and the first tiny-but-serious squad challenge.</p>
+          <form id="waitlistForm" class="waitlist-form">
+            <label>
+              <span>Email</span>
+              <input id="emailInput" type="email" placeholder="you@example.com" required />
+            </label>
+            <button class="button primary" type="submit">Save my spot</button>
+          </form>
+          <p id="formStatus" class="form-status" role="status"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>just20-jake</span>
+      <span>20 pushups. One happy little streak.</span>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

@@ -130,7 +130,10 @@ async function updateStreak(today: string): Promise<void> {
   }>('SELECT * FROM streak WHERE id = 1');
 
   if (!s) return;
-  if (s.last_completed_date === today) return;
+  if (s.last_completed_date === today) {
+    await db.runAsync('UPDATE streak SET total_sessions = total_sessions + 1 WHERE id = 1');
+    return;
+  }
 
   const yesterday = offsetLocalDay(today, -1);
   let newCurrent = 1;
@@ -175,8 +178,15 @@ export async function getStreak(): Promise<{
     total_sessions: number;
   }>('SELECT * FROM streak WHERE id = 1');
   if (!row) return { current: 0, best: 0, lastCompletedDate: null, freezeCount: 0, totalSessions: 0 };
+
+  const daysSinceCompletion = row.last_completed_date
+    ? localDaysBetween(row.last_completed_date, localDayKey())
+    : 0;
+  const streakStillAlive =
+    daysSinceCompletion <= 1 || (daysSinceCompletion === 2 && row.freeze_count > 0);
+
   return {
-    current: row.current,
+    current: streakStillAlive ? row.current : 0,
     best: row.best,
     lastCompletedDate: row.last_completed_date,
     freezeCount: row.freeze_count,

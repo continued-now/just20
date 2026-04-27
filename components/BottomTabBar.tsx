@@ -1,5 +1,6 @@
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStreak } from '../hooks/useStreak';
@@ -12,6 +13,13 @@ const TAB_CONFIG: Record<string, { active: IconName; inactive: IconName; label: 
   streak:   { active: 'flame',       inactive: 'flame-outline',       label: 'Streak'  },
   squad:    { active: 'people',      inactive: 'people-outline',      label: 'Squad'   },
   settings: { active: 'settings',    inactive: 'settings-outline',    label: 'Settings' },
+};
+
+const TAB_HREFS: Record<string, string> = {
+  index: '/',
+  streak: '/(tabs)/streak',
+  squad: '/(tabs)/squad',
+  settings: '/(tabs)/settings',
 };
 
 export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
@@ -30,7 +38,10 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
 
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-          if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+          const href = TAB_HREFS[route.name];
+          if (!focused && !event.defaultPrevented) {
+            router.navigate((href ?? '/') as any);
+          }
         };
 
         return (

@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -6,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Camera,
   CameraRuntimeError,
+  runAsync,
   runAtTargetFps,
   useCameraDevice,
   useCameraPermission,
@@ -40,12 +42,23 @@ const MODEL_INPUT_SIZE = 192;
 const PRIMARY_CROP_SCALE = 0.78;
 const SECONDARY_CROP_SCALE = 0.5;
 
-const PERFORMANCE_CONFIG = {
-  previewFps: 4,
-  activeFps: 15,
-  recoveryFps: 20,
+const DEVICE_PERFORMANCE_CONFIG = {
+  previewFps: 3,
+  activeFps: 10,
+  recoveryFps: 6,
   smoothingAlpha: 0.32,
 };
+
+const EMULATOR_PERFORMANCE_CONFIG = {
+  previewFps: 1,
+  activeFps: 4,
+  recoveryFps: 2,
+  smoothingAlpha: 0.32,
+};
+
+const PERFORMANCE_CONFIG = Constants.isDevice
+  ? DEVICE_PERFORMANCE_CONFIG
+  : EMULATOR_PERFORMANCE_CONFIG;
 
 const SKELETON_LINKS: Array<[number, number]> = [
   [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
@@ -263,9 +276,11 @@ export default function WorkoutScreen() {
   const [manualAdjustments, setManualAdjustments] = useState(0);
   const [showCalibration, setShowCalibration] = useState(false);
   const [secondaryTrackingRequested, setSecondaryTrackingRequested] = useState(false);
+  const [cameraPaused, setCameraPaused] = useState(false);
 
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
+  const stopConfirmedRef = useRef(false);
   const milestoneClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Worklet-accessible shared state
@@ -425,6 +440,7 @@ export default function WorkoutScreen() {
     if (countdown === 0) {
       setCountdown(null);
       setFeedback('Go!');
+      startTimeRef.current = Date.now();
       isStarted.value = true;
       return;
     }
@@ -445,6 +461,8 @@ export default function WorkoutScreen() {
 
       runAtTargetFps(targetFps, () => {
         'worklet';
+        runAsync(frame, () => {
+          'worklet';
         const inferenceStart = performance.now();
         const primaryCrop = primaryLocked.value
           ? makeSquareCrop(frame.width, frame.height, primaryCenterX.value, primaryCenterY.value, PRIMARY_CROP_SCALE)
@@ -677,6 +695,7 @@ export default function WorkoutScreen() {
             );
           }
         }
+        });
       });
     },
     [
@@ -736,9 +755,10 @@ export default function WorkoutScreen() {
     manuallyAdjusted.value = false;
     finishedRef.current = false;
     prevRepsRef.current = 0;
-    startTimeRef.current = Date.now();
+    startTimeRef.current = 0;
     setReps(0);
     setFinished(false);
+    setCameraPaused(false);
     setStarted(true);
     setCountdown(3);
     setFirstRepTime(null);
@@ -804,6 +824,8 @@ export default function WorkoutScreen() {
   }
 
   function handleManualRep(delta: number) {
+    if (!started || countdown !== null || finished) return;
+
     const next = Math.max(0, Math.min(TARGET, reps + delta));
     if (next === reps) return;
 
@@ -846,9 +868,14 @@ export default function WorkoutScreen() {
     await cancelAllNudges();
   }
 
+  function getWorkoutDurationMs(): number {
+    const startedAt = firstRepTime ?? startTimeRef.current;
+    return startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+  }
+
   async function handleFinish() {
     isStarted.value = false;
-    const duration = Date.now() - startTimeRef.current;
+    const duration = getWorkoutDurationMs();
     const nudgesUsed = await getFiredNudgeCountToday();
     await saveSession(reps, duration);
     await clearCompletedWorkoutReminders();
@@ -860,21 +887,36 @@ export default function WorkoutScreen() {
 
   function handleClose() {
     if (started && reps > 0) {
+      setCameraPaused(true);
+      stopConfirmedRef.current = false;
       Alert.alert('Stop workout?', 'Your reps will still be saved.', [
-        { text: 'Keep going', style: 'cancel' },
+        {
+          text: 'Keep going',
+          style: 'cancel',
+          onPress: () => {
+            stopConfirmedRef.current = false;
+            setCameraPaused(false);
+          },
+        },
         {
           text: 'Stop',
           style: 'destructive',
           onPress: async () => {
+            stopConfirmedRef.current = true;
             isStarted.value = false;
-            const duration = Date.now() - startTimeRef.current;
+            const duration = getWorkoutDurationMs();
             await saveSession(reps, duration);
             if (reps >= TARGET) await clearCompletedWorkoutReminders();
             router.back();
           },
         },
-      ]);
+      ], {
+        onDismiss: () => {
+          if (!stopConfirmedRef.current) setCameraPaused(false);
+        },
+      });
     } else {
+      setCameraPaused(true);
       router.back();
     }
   }
@@ -901,6 +943,8 @@ export default function WorkoutScreen() {
 
   const modelReady = model.state === 'loaded';
   const modelError = model.state === 'error';
+  const startDisabled = !modelReady || modelError || !device || !!cameraError;
+  const workoutActive = started && countdown === null && !finished;
 
   const isBigCountdown = countdown !== null && countdown > 0;
   const isMilestone = countdown === null && !!milestoneMsg;
@@ -918,7 +962,10 @@ export default function WorkoutScreen() {
         <Camera
           style={StyleSheet.absoluteFill}
           device={device}
-          isActive={!finished}
+          isActive={!finished && !cameraPaused}
+          photo={false}
+          video={false}
+          audio={false}
           frameProcessor={frameProcessor}
           pixelFormat="yuv"
           onError={handleCameraError}
@@ -1031,10 +1078,10 @@ export default function WorkoutScreen() {
                   <View key={i} style={[styles.dot, i < reps && styles.dotFilled]} />
                 ))}
               </View>
-              {started && repTimestamps.length >= 2 && (
+              {workoutActive && repTimestamps.length >= 2 && (
                 <PaceGraph timestamps={repTimestamps} />
               )}
-              {started && (
+              {workoutActive && (
                 <View style={styles.adjustRow}>
                   <TouchableOpacity
                     onPress={() => handleManualRep(-1)}
@@ -1059,12 +1106,20 @@ export default function WorkoutScreen() {
               )}
               {!started && (
                 <TouchableOpacity
-                  style={[styles.startBtn, (!modelReady || modelError) && styles.startBtnDisabled]}
+                  style={[styles.startBtn, startDisabled && styles.startBtnDisabled]}
                   onPress={handleStart}
-                  disabled={!modelReady || modelError}
+                  disabled={startDisabled}
                 >
                   <Text style={styles.startBtnText}>
-                    {modelError ? 'Model failed to load' : modelReady ? 'START' : 'Loading model…'}
+                    {!device
+                      ? 'No camera found'
+                      : cameraError
+                      ? 'Camera unavailable'
+                      : modelError
+                      ? 'Model failed to load'
+                      : modelReady
+                      ? 'START'
+                      : 'Loading model…'}
                   </Text>
                 </TouchableOpacity>
               )}

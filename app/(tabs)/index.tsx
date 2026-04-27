@@ -62,10 +62,31 @@ export default function HomeScreen() {
     return `${min}:${sec.toString().padStart(2, '0')}`;
   }
 
+  function formatHour(h: number) {
+    if (h === 12) return '12pm';
+    if (h < 12) return `${h}am`;
+    return `${h - 12}pm`;
+  }
+
   const showCountdown = remainingMs > 0 && !streak.completedToday;
 
   function statusText() {
     if (streak.completedToday) return "You did it! Rest up. 🎉";
+    if (nudges.loading) return "Checking today's reminder plan...";
+    if (showCountdown) return "Your 10-minute window is open 🔥";
+    if (nudges.mode === 'strict') {
+      return nudges.scheduledWindowActive
+        ? `No-excuses window at ${formatHour(nudges.scheduledHour)}`
+        : 'Daily reminders are off';
+    }
+    if (nudges.mode === 'scheduled_fallback') {
+      if (nudges.remaining > 0) {
+        return `${formatHour(nudges.scheduledHour)} window + ${nudges.remaining} fallback nudge${nudges.remaining !== 1 ? 's' : ''}`;
+      }
+      return nudges.scheduledWindowActive
+        ? `Set-time window at ${formatHour(nudges.scheduledHour)}`
+        : 'Daily reminders are off';
+    }
     if (nudges.remaining <= 0) return "Day's almost over. Tomorrow. 😑";
     if (nudges.remaining === 1) return "Last chance today 🔥";
     return `${nudges.remaining} nudge${nudges.remaining !== 1 ? 's' : ''} left today`;

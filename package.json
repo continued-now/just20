@@ -7,8 +7,12 @@
     "android": "expo run:android",
     "android:webcam": "bash scripts/android-webcam.sh",
     "ios": "expo run:ios",
+    "landing": "python3 -m http.server 8082 --directory landing",
+    "landing2": "python3 -m http.server 8083 --directory landing2",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:native-config": "node scripts/check-native-config.js",
+    "verify": "npm run typecheck && npm run check:native-config && npx expo-doctor"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -29,8 +33,6 @@
     "react": "19.1.0",
     "react-native": "0.81.5",
     "react-native-fast-tflite": "^1.6.1",
-    "react-native-nitro-image": "^0.13.1",
-    "react-native-nitro-modules": "^0.35.5",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
@@ -46,5 +48,18 @@
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
     "typescript": "~5.9.2"
+  },
+  "expo": {
+    "doctor": {
+      "appConfigFieldsNotSyncedCheck": {
+        "enabled": false
+      },
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-fast-tflite",
+          "vision-camera-resize-plugin"
+        ]
+      }
+    }
   }
 }

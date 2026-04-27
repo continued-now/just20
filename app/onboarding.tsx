@@ -219,23 +219,23 @@ function Step3({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
       <MascotBounce emoji="⚡" />
-      <Text style={styles.headline}>One shot to get it done.</Text>
-      <Text style={styles.body}>Random windows throughout the day. When one hits — drop and give 20. Anywhere.</Text>
+      <Text style={styles.headline}>Pick a time.{'\n'}Protect the streak.</Text>
+      <Text style={styles.body}>Default is a daily 10-minute window. Hit it clean, or fallback nudges start chasing you.</Text>
 
       <View style={styles.mechCard}>
         <View style={styles.mechRow}>
-          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>🎲</Text></View>
+          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>⏰</Text></View>
           <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>Random times</Text>
-            <Text style={styles.mechSub}>Different every day. No predicting it, no gaming it.</Text>
+            <Text style={styles.mechTitle}>Set-time window</Text>
+            <Text style={styles.mechSub}>A clean daily slot with 10 minutes on the clock.</Text>
           </View>
         </View>
         <View style={styles.mechDivider} />
         <View style={styles.mechRow}>
           <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>✅</Text></View>
           <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>Get it out of the way</Text>
-            <Text style={styles.mechSub}>Notification hits? That's your cue. Do it and you're done.</Text>
+            <Text style={styles.mechTitle}>More XP on time</Text>
+            <Text style={styles.mechSub}>The earlier you honor the plan, the better the reward.</Text>
           </View>
         </View>
         <View style={styles.mechDivider} />
@@ -259,23 +259,23 @@ function Step4({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void })
   return (
     <View style={styles.step}>
       <MascotBounce emoji="😤" />
-      <Text style={styles.headline}>We will annoy you.</Text>
-      <Text style={styles.body}>Up to 20 notifications a day, getting angrier until you do it.</Text>
+      <Text style={styles.headline}>We will keep{'\n'}you honest.</Text>
+      <Text style={styles.body}>First, your window opens. If you miss it, nudges get louder and XP starts dropping.</Text>
 
       <View style={styles.notifPreview}>
         <View style={styles.notifRow}>
-          <Text style={styles.notifIcon}>🙄</Text>
-          <Text style={styles.notifMsg}>gentle reminder: the floor is waiting.</Text>
+          <Text style={styles.notifIcon}>⏰</Text>
+          <Text style={styles.notifMsg}>Your window is open. 10 minutes.</Text>
         </View>
         <View style={styles.notifDivider} />
         <View style={styles.notifRow}>
-          <Text style={styles.notifIcon}>😤</Text>
-          <Text style={styles.notifMsg}>DO THE PUSHUPS. i'm not asking.</Text>
+          <Text style={styles.notifIcon}>🙄</Text>
+          <Text style={styles.notifMsg}>Missed it? Fine. Fallback nudges begin.</Text>
         </View>
         <View style={styles.notifDivider} />
         <View style={styles.notifRow}>
           <Text style={styles.notifIcon}>💢</Text>
-          <Text style={styles.notifMsg}>FINAL WARNING. DO IT OR FACE SHAME.</Text>
+          <Text style={styles.notifMsg}>More nudges means less XP. Do the 20.</Text>
         </View>
       </View>
 

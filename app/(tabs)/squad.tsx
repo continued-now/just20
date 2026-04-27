@@ -103,8 +103,9 @@ export default function SquadScreen() {
     }
   }
 
-  const myLeaderEntry = weeklyLeaders.find(l => l.isMe);
-  if (myLeaderEntry && data) myLeaderEntry.streak = data.streak;
+  const leaderboard = weeklyLeaders
+    .map(entry => entry.isMe && data ? { ...entry, streak: data.streak } : entry)
+    .sort((a, b) => b.streak - a.streak);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -203,21 +204,19 @@ export default function SquadScreen() {
               Global rankings unlock once you connect friends.{'\n'}
               Current view is a preview.
             </Text>
-            {weeklyLeaders
-              .sort((a, b) => b.streak - a.streak)
-              .map((entry, i) => (
-                <View key={entry.name} style={[styles.leaderRow, entry.isMe && styles.leaderRowMe]}>
-                  <Text style={[styles.leaderRank, i === 0 && styles.leaderRankTop]}>
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
-                  </Text>
-                  <Text style={[styles.leaderName, entry.isMe && styles.leaderNameMe]}>
-                    {entry.isMe ? (data?.username ?? 'You') : entry.name}
-                  </Text>
-                  <Text style={[styles.leaderStreak, entry.isMe && styles.leaderStreakMe]}>
-                    {entry.streak} 🔥
-                  </Text>
-                </View>
-              ))}
+            {leaderboard.map((entry, i) => (
+              <View key={entry.name} style={[styles.leaderRow, entry.isMe && styles.leaderRowMe]}>
+                <Text style={[styles.leaderRank, i === 0 && styles.leaderRankTop]}>
+                  {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}
+                </Text>
+                <Text style={[styles.leaderName, entry.isMe && styles.leaderNameMe]}>
+                  {entry.isMe ? (data?.username ?? 'You') : entry.name}
+                </Text>
+                <Text style={[styles.leaderStreak, entry.isMe && styles.leaderStreakMe]}>
+                  {entry.streak} 🔥
+                </Text>
+              </View>
+            ))}
           </View>
 
           {/* Rank card */}

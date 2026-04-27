@@ -11,6 +11,7 @@ import {
   cancelWindowedNotification,
   getRemainingNudgeCount,
   hasScheduledWindowNotification,
+  requestPermission,
   scheduleNudges,
   scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
@@ -50,24 +51,38 @@ export default function SettingsScreen() {
     load();
   }, []);
 
-  async function enableMode(next: NotificationMode, hour = scheduledHour) {
+  async function ensureNotificationPermission(): Promise<boolean> {
+    const granted = await requestPermission();
+    if (!granted) {
+      setNotificationsOn(false);
+      Alert.alert('Notifications blocked', 'Enable notifications in system settings to use daily reminders.');
+      return false;
+    }
+    return true;
+  }
+
+  async function enableMode(next: NotificationMode, hour = scheduledHour): Promise<boolean> {
+    const granted = await ensureNotificationPermission();
+    if (!granted) return false;
+
     if (next === 'random') {
       await cancelWindowedNotification();
       await scheduleNudges({ source: 'random' });
       const count = await getRemainingNudgeCount();
       setNotificationsOn(count > 0);
-      return;
+      return count > 0;
     }
 
     if (next === 'strict') {
       await cancelAllNudges();
       await scheduleWindowedNotification(hour);
       setNotificationsOn(true);
-      return;
+      return true;
     }
 
     await scheduleWindowWithFallbackNudges(hour);
     setNotificationsOn(true);
+    return true;
   }
 
   async function handleModeChange(next: NotificationMode) {
@@ -80,24 +95,19 @@ export default function SettingsScreen() {
     setScheduledHour(h);
     await setSetting('scheduled_hour', String(h));
     if (notificationsOn) {
-      if (mode === 'strict') await scheduleWindowedNotification(h);
-      if (mode === 'scheduled_fallback') await scheduleWindowWithFallbackNudges(h);
+      await enableMode(mode, h);
     }
   }
 
   async function handleReschedule() {
+    const scheduled = await enableMode(mode);
+    if (!scheduled) return;
+
     if (mode === 'strict') {
-      await scheduleWindowedNotification(scheduledHour);
-      setNotificationsOn(true);
       Alert.alert('Window scheduled', `You'll get notified at ${formatHour(scheduledHour)} daily.`);
     } else if (mode === 'scheduled_fallback') {
-      await scheduleWindowWithFallbackNudges(scheduledHour);
-      setNotificationsOn(true);
       Alert.alert('Window + fallback scheduled', `Your 10-minute window opens at ${formatHour(scheduledHour)}. Nudges kick in if you miss it.`);
     } else {
-      await cancelAllNudges();
-      await scheduleNudges({ source: 'random' });
-      setNotificationsOn(true);
       Alert.alert('Nudges rescheduled', '20 new nudges scheduled for today.');
     }
   }
