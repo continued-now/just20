@@ -1,11 +1,29 @@
 import * as Notifications from 'expo-notifications';
-import { saveNudgeSchedule } from './db';
+import { clearNudgeScheduleFromToday, saveNudgeSchedule } from './db';
 
 const START_HOUR = 7;
 const END_HOUR = 22;
 const NUDGE_COUNT = 20;
+const WINDOW_MS = 10 * 60 * 1000;
 const STREAK_AT_RISK_ID = 'streak-at-risk';
 const NUDGE_TYPE = 'nudge';
+const SCHEDULED_WINDOW_ID = 'scheduled-window';
+const SCHEDULED_WINDOW_TYPE = 'scheduled-window';
+
+export const DEFAULT_NOTIFICATION_MODE = 'scheduled_fallback';
+export const DEFAULT_SCHEDULED_HOUR = 8;
+
+export type NotificationMode = 'scheduled_fallback' | 'strict' | 'random';
+
+type ScheduleWindowOptions = {
+  skipToday?: boolean;
+};
+
+type ScheduleNudgeOptions = {
+  count?: number;
+  source?: 'random' | 'fallback';
+  startAfter?: Date;
+};
 
 const TIERS: { minRemaining: number; messages: string[] }[] = [
   {
@@ -60,12 +78,43 @@ function isNudgeNotification(notification: Notifications.NotificationRequest): b
   return data?.type === NUDGE_TYPE || typeof data?.nudgeIndex === 'number';
 }
 
+function isScheduledWindowNotification(notification: Notifications.NotificationRequest): boolean {
+  const data = notification.content.data;
+  return notification.identifier === SCHEDULED_WINDOW_ID || data?.type === SCHEDULED_WINDOW_TYPE;
+}
+
+function nextScheduledWindowDate(hour: number, skipToday = false): Date {
+  const now = new Date();
+  const fireAt = new Date(now);
+  fireAt.setHours(hour, 0, 0, 0);
+
+  if (skipToday || fireAt.getTime() <= now.getTime()) {
+    fireAt.setDate(fireAt.getDate() + 1);
+  }
+
+  return fireAt;
+}
+
+function nudgeScheduleBounds(startAfter?: Date): { earliest: number; endMs: number } {
+  const now = new Date();
+  const scheduleDay = startAfter ? new Date(startAfter) : new Date(now);
+  const startMs = new Date(scheduleDay).setHours(START_HOUR, 0, 0, 0);
+  const endMs = new Date(scheduleDay).setHours(END_HOUR, 0, 0, 0);
+  const earliest = Math.max(
+    startMs,
+    now.getTime() + 2 * 60 * 1000,
+    startAfter?.getTime() ?? 0
+  );
+
+  return { earliest, endMs };
+}
+
 export async function requestPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
 }
 
-export async function scheduleNudges(): Promise<void> {
+export async function scheduleNudges(options: ScheduleNudgeOptions = {}): Promise<void> {
   // Cancel old nudge notifications while preserving streak/social notifications.
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const n of scheduled) {
@@ -74,16 +123,17 @@ export async function scheduleNudges(): Promise<void> {
     }
   }
 
-  const now = new Date();
-  const startMs = new Date(now).setHours(START_HOUR, 0, 0, 0);
-  const endMs = new Date(now).setHours(END_HOUR, 0, 0, 0);
-  const earliest = Math.max(startMs, now.getTime() + 2 * 60 * 1000);
+  const { earliest, endMs } = nudgeScheduleBounds(options.startAfter);
   const window = endMs - earliest;
 
-  if (window <= 0) return;
+  if (window <= 0) {
+    await saveNudgeSchedule([]);
+    return;
+  }
 
   const times: Date[] = [];
-  for (let i = 0; i < NUDGE_COUNT; i++) {
+  const count = options.count ?? NUDGE_COUNT;
+  for (let i = 0; i < count; i++) {
     const t = new Date(earliest + Math.random() * window);
     times.push(t);
   }
@@ -99,7 +149,7 @@ export async function scheduleNudges(): Promise<void> {
         title: 'just20',
         body: pickMessage(t.messages, times[i]),
         sound: remaining <= 5 ? 'default' : undefined,
-        data: { type: NUDGE_TYPE, nudgeIndex: i, remaining },
+        data: { type: NUDGE_TYPE, nudgeIndex: i, remaining, source: options.source ?? 'random' },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -109,10 +159,20 @@ export async function scheduleNudges(): Promise<void> {
   }
 }
 
-const SCHEDULED_WINDOW_ID = 'scheduled-window';
-const SCHEDULED_WINDOW_TYPE = 'scheduled-window';
+export async function scheduleWindowWithFallbackNudges(
+  hour: number,
+  options: ScheduleWindowOptions = {}
+): Promise<void> {
+  const windowStart = nextScheduledWindowDate(hour, options.skipToday);
+  const fallbackStart = new Date(windowStart.getTime() + WINDOW_MS);
+  await scheduleWindowedNotification(hour, options);
+  await scheduleNudges({ source: 'fallback', startAfter: fallbackStart });
+}
 
-export async function scheduleWindowedNotification(hour: number): Promise<void> {
+export async function scheduleWindowedNotification(
+  hour: number,
+  options: ScheduleWindowOptions = {}
+): Promise<void> {
   await Notifications.cancelScheduledNotificationAsync(SCHEDULED_WINDOW_ID).catch(() => {});
   await Notifications.scheduleNotificationAsync({
     identifier: SCHEDULED_WINDOW_ID,
@@ -123,11 +183,9 @@ export async function scheduleWindowedNotification(hour: number): Promise<void> 
       data: { type: SCHEDULED_WINDOW_TYPE },
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-      hour,
-      minute: 0,
-      repeats: true,
-    } as any,
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: nextScheduledWindowDate(hour, options.skipToday),
+    },
   });
 }
 
@@ -142,6 +200,7 @@ export async function cancelAllNudges(): Promise<void> {
       await Notifications.cancelScheduledNotificationAsync(n.identifier);
     }
   }
+  await clearNudgeScheduleFromToday();
 }
 
 export async function scheduleStreakAtRiskNotification(currentStreak: number): Promise<void> {
@@ -180,6 +239,11 @@ export async function scheduleStreakAtRiskNotification(currentStreak: number): P
 export async function getRemainingNudgeCount(): Promise<number> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   return scheduled.filter(isNudgeNotification).length;
+}
+
+export async function hasScheduledWindowNotification(): Promise<boolean> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  return scheduled.some(isScheduledWindowNotification);
 }
 
 export function setupNotificationHandler(): void {

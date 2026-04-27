@@ -4,10 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { getSetting, setSetting } from '../../lib/db';
 import {
+  DEFAULT_NOTIFICATION_MODE,
+  DEFAULT_SCHEDULED_HOUR,
+  type NotificationMode,
   cancelAllNudges,
   cancelWindowedNotification,
   getRemainingNudgeCount,
+  hasScheduledWindowNotification,
   scheduleNudges,
+  scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
 } from '../../lib/notifications';
 
@@ -18,58 +23,81 @@ function formatHour(h: number) {
   return `${h - 12}pm`;
 }
 
-type NotifMode = 'random' | 'scheduled';
+function normalizeMode(value: string | null): NotificationMode {
+  if (value === 'random' || value === 'strict' || value === 'scheduled_fallback') return value;
+  if (value === 'scheduled') return 'strict';
+  return DEFAULT_NOTIFICATION_MODE;
+}
 
 export default function SettingsScreen() {
   const [notificationsOn, setNotificationsOn] = useState(false);
-  const [mode, setMode] = useState<NotifMode>('random');
-  const [scheduledHour, setScheduledHour] = useState(8);
+  const [mode, setMode] = useState<NotificationMode>(DEFAULT_NOTIFICATION_MODE);
+  const [scheduledHour, setScheduledHour] = useState(DEFAULT_SCHEDULED_HOUR);
 
   useEffect(() => {
     async function load() {
-      const [count, savedMode, savedHour] = await Promise.all([
+      const [nudgeCount, scheduledActive, savedMode, savedHour] = await Promise.all([
         getRemainingNudgeCount(),
+        hasScheduledWindowNotification(),
         getSetting('notification_mode'),
         getSetting('scheduled_hour'),
       ]);
-      setNotificationsOn(count > 0);
-      if (savedMode === 'scheduled') setMode('scheduled');
+      const initialMode = normalizeMode(savedMode);
+      setMode(initialMode);
+      setNotificationsOn(initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0);
       if (savedHour) setScheduledHour(parseInt(savedHour, 10));
     }
     load();
   }, []);
 
-  async function handleModeChange(next: NotifMode) {
-    setMode(next);
-    await setSetting('notification_mode', next);
+  async function enableMode(next: NotificationMode, hour = scheduledHour) {
     if (next === 'random') {
       await cancelWindowedNotification();
-      await cancelAllNudges();
-      await scheduleNudges();
+      await scheduleNudges({ source: 'random' });
       const count = await getRemainingNudgeCount();
       setNotificationsOn(count > 0);
-    } else {
-      await cancelAllNudges();
-      await scheduleWindowedNotification(scheduledHour);
-      setNotificationsOn(true);
+      return;
     }
+
+    if (next === 'strict') {
+      await cancelAllNudges();
+      await scheduleWindowedNotification(hour);
+      setNotificationsOn(true);
+      return;
+    }
+
+    await scheduleWindowWithFallbackNudges(hour);
+    setNotificationsOn(true);
+  }
+
+  async function handleModeChange(next: NotificationMode) {
+    setMode(next);
+    await setSetting('notification_mode', next);
+    await enableMode(next);
   }
 
   async function handleHourChange(h: number) {
     setScheduledHour(h);
     await setSetting('scheduled_hour', String(h));
-    if (mode === 'scheduled') {
-      await scheduleWindowedNotification(h);
+    if (notificationsOn) {
+      if (mode === 'strict') await scheduleWindowedNotification(h);
+      if (mode === 'scheduled_fallback') await scheduleWindowWithFallbackNudges(h);
     }
   }
 
   async function handleReschedule() {
-    if (mode === 'scheduled') {
+    if (mode === 'strict') {
       await scheduleWindowedNotification(scheduledHour);
+      setNotificationsOn(true);
       Alert.alert('Window scheduled', `You'll get notified at ${formatHour(scheduledHour)} daily.`);
+    } else if (mode === 'scheduled_fallback') {
+      await scheduleWindowWithFallbackNudges(scheduledHour);
+      setNotificationsOn(true);
+      Alert.alert('Window + fallback scheduled', `Your 10-minute window opens at ${formatHour(scheduledHour)}. Nudges kick in if you miss it.`);
     } else {
       await cancelAllNudges();
-      await scheduleNudges();
+      await scheduleNudges({ source: 'random' });
+      setNotificationsOn(true);
       Alert.alert('Nudges rescheduled', '20 new nudges scheduled for today.');
     }
   }
@@ -88,7 +116,45 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notification Style</Text>
-          <Text style={styles.sectionDesc}>Choose how you get pushed to do your 20.</Text>
+          <Text style={styles.sectionDesc}>Choose how hard the app should make the daily promise feel.</Text>
+
+          <TouchableOpacity
+            style={[styles.modeCard, mode === 'scheduled_fallback' && styles.modeCardActive]}
+            onPress={() => handleModeChange('scheduled_fallback')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.modeHeader}>
+              <Text style={styles.modeEmoji}>⏰</Text>
+              <View style={styles.modeTitleWrap}>
+                <Text style={[styles.modeTitle, mode === 'scheduled_fallback' && styles.modeTitleActive]}>
+                  Set a time
+                </Text>
+                <Text style={styles.modeSub}>Default. 10-minute window. If you miss it, nudges kick in and XP starts dropping.</Text>
+              </View>
+              {mode === 'scheduled_fallback' && <Text style={styles.modeCheck}>✓</Text>}
+            </View>
+
+            {mode === 'scheduled_fallback' && <TimePicker scheduledHour={scheduledHour} onHourChange={handleHourChange} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.modeCard, mode === 'strict' && styles.modeCardActive]}
+            onPress={() => handleModeChange('strict')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.modeHeader}>
+              <Text style={styles.modeEmoji}>⚡</Text>
+              <View style={styles.modeTitleWrap}>
+                <Text style={[styles.modeTitle, mode === 'strict' && styles.modeTitleActive]}>
+                  No excuses
+                </Text>
+                <Text style={styles.modeSub}>Only the set time. 10-minute window. Highest XP if you hit it.</Text>
+              </View>
+              {mode === 'strict' && <Text style={styles.modeCheck}>✓</Text>}
+            </View>
+
+            {mode === 'strict' && <TimePicker scheduledHour={scheduledHour} onHourChange={handleHourChange} />}
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.modeCard, mode === 'random' && styles.modeCardActive]}
@@ -101,51 +167,10 @@ export default function SettingsScreen() {
                 <Text style={[styles.modeTitle, mode === 'random' && styles.modeTitleActive]}>
                   Get annoyed
                 </Text>
-                <Text style={styles.modeSub}>20 random nudges, 7am–10pm. Each one gives you 10 minutes.</Text>
+                <Text style={styles.modeSub}>20 random nudges, 7am–10pm. Flexible, but lower XP as nudges stack.</Text>
               </View>
               {mode === 'random' && <Text style={styles.modeCheck}>✓</Text>}
             </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.modeCard, mode === 'scheduled' && styles.modeCardActive]}
-            onPress={() => handleModeChange('scheduled')}
-            activeOpacity={0.8}
-          >
-            <View style={styles.modeHeader}>
-              <Text style={styles.modeEmoji}>⏰</Text>
-              <View style={styles.modeTitleWrap}>
-                <Text style={[styles.modeTitle, mode === 'scheduled' && styles.modeTitleActive]}>
-                  Get it done
-                </Text>
-                <Text style={styles.modeSub}>One shot at your chosen time. 10 minutes. No excuses.</Text>
-              </View>
-              {mode === 'scheduled' && <Text style={styles.modeCheck}>✓</Text>}
-            </View>
-
-            {mode === 'scheduled' && (
-              <View style={styles.timePicker}>
-                <Text style={styles.timePickerLabel}>Daily window time</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.hourRow}
-                >
-                  {HOURS.map((h) => (
-                    <TouchableOpacity
-                      key={h}
-                      style={[styles.hourChip, h === scheduledHour && styles.hourChipActive]}
-                      onPress={() => handleHourChange(h)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.hourChipText, h === scheduledHour && styles.hourChipTextActive]}>
-                        {formatHour(h)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
           </TouchableOpacity>
         </View>
 
@@ -154,10 +179,12 @@ export default function SettingsScreen() {
 
           <View style={styles.row}>
             <View>
-              <Text style={styles.rowLabel}>Daily nudges</Text>
+              <Text style={styles.rowLabel}>Daily reminders</Text>
               <Text style={styles.rowSub}>
-                {mode === 'scheduled'
-                  ? `Scheduled window at ${formatHour(scheduledHour)}`
+                {mode === 'strict'
+                  ? `Strict window at ${formatHour(scheduledHour)}`
+                  : mode === 'scheduled_fallback'
+                  ? `${formatHour(scheduledHour)} window + fallback nudges`
                   : '20 random nudges between 7am–10pm'}
               </Text>
             </View>
@@ -166,8 +193,7 @@ export default function SettingsScreen() {
               onValueChange={async (v) => {
                 setNotificationsOn(v);
                 if (v) {
-                  if (mode === 'scheduled') await scheduleWindowedNotification(scheduledHour);
-                  else await scheduleNudges();
+                  await enableMode(mode);
                 } else {
                   await cancelAllNudges();
                   await cancelWindowedNotification();
@@ -179,7 +205,7 @@ export default function SettingsScreen() {
 
           <TouchableOpacity style={styles.btn} onPress={handleReschedule}>
             <Text style={styles.btnText}>
-              {mode === 'scheduled' ? 'Reschedule window' : "Reschedule today's nudges"}
+              {mode === 'random' ? "Reschedule today's nudges" : 'Reschedule window'}
             </Text>
           </TouchableOpacity>
 
@@ -205,6 +231,38 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function TimePicker({
+  scheduledHour,
+  onHourChange,
+}: {
+  scheduledHour: number;
+  onHourChange: (hour: number) => void;
+}) {
+  return (
+    <View style={styles.timePicker}>
+      <Text style={styles.timePickerLabel}>Daily window time</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.hourRow}
+      >
+        {HOURS.map((h) => (
+          <TouchableOpacity
+            key={h}
+            style={[styles.hourChip, h === scheduledHour && styles.hourChipActive]}
+            onPress={() => onHourChange(h)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.hourChipText, h === scheduledHour && styles.hourChipTextActive]}>
+              {formatHour(h)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 

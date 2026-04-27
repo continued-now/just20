@@ -53,6 +53,25 @@ export async function initDb(): Promise<void> {
 
     INSERT OR IGNORE INTO coins (id, balance, total_earned) VALUES (1, 0, 0);
 
+    CREATE TABLE IF NOT EXISTS xp (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      balance INTEGER NOT NULL DEFAULT 0,
+      total_earned INTEGER NOT NULL DEFAULT 0,
+      last_daily_award_date TEXT,
+      last_milestone_award_date TEXT
+    );
+
+    INSERT OR IGNORE INTO xp (id, balance, total_earned) VALUES (1, 0, 0);
+
+    CREATE TABLE IF NOT EXISTS xp_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      metadata TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -454,6 +473,126 @@ export async function markChestClaimed(amount: number): Promise<void> {
   );
 }
 
+// ─── XP ─────────────────────────────────────────────────────────────────────
+
+export type XpData = {
+  balance: number;
+  totalEarned: number;
+  lastDailyAwardDate: string | null;
+  lastMilestoneAwardDate: string | null;
+};
+
+export type XpEvent = {
+  id: number;
+  date: string;
+  amount: number;
+  source: string;
+  metadata: string | null;
+  createdAt: string;
+};
+
+export async function getXp(): Promise<XpData> {
+  if (!db) {
+    return {
+      balance: 0,
+      totalEarned: 0,
+      lastDailyAwardDate: null,
+      lastMilestoneAwardDate: null,
+    };
+  }
+
+  const row = await db.getFirstAsync<{
+    balance: number;
+    total_earned: number;
+    last_daily_award_date: string | null;
+    last_milestone_award_date: string | null;
+  }>('SELECT * FROM xp WHERE id = 1');
+
+  if (!row) {
+    return {
+      balance: 0,
+      totalEarned: 0,
+      lastDailyAwardDate: null,
+      lastMilestoneAwardDate: null,
+    };
+  }
+
+  return {
+    balance: row.balance,
+    totalEarned: row.total_earned,
+    lastDailyAwardDate: row.last_daily_award_date,
+    lastMilestoneAwardDate: row.last_milestone_award_date,
+  };
+}
+
+async function addXp(amount: number, source: string, metadata?: Record<string, unknown>): Promise<void> {
+  if (!db || amount <= 0) return;
+  const today = localDayKey();
+  await db.withTransactionAsync(async () => {
+    await db!.runAsync(
+      'UPDATE xp SET balance = balance + ?, total_earned = total_earned + ? WHERE id = 1',
+      [amount, amount]
+    );
+    await db!.runAsync(
+      'INSERT INTO xp_events (date, amount, source, metadata) VALUES (?, ?, ?, ?)',
+      [today, amount, source, metadata ? JSON.stringify(metadata) : null]
+    );
+  });
+}
+
+export async function claimDailyXp(
+  amount: number,
+  metadata?: Record<string, unknown>
+): Promise<number | null> {
+  if (!db) return null;
+  const today = localDayKey();
+  const row = await db.getFirstAsync<{ last_daily_award_date: string | null }>(
+    'SELECT last_daily_award_date FROM xp WHERE id = 1'
+  );
+  if (row?.last_daily_award_date === today) return null;
+
+  await addXp(amount, 'daily_workout', metadata);
+  await db.runAsync('UPDATE xp SET last_daily_award_date = ? WHERE id = 1', [today]);
+  return amount;
+}
+
+export async function claimMilestoneXp(
+  amount: number,
+  metadata?: Record<string, unknown>
+): Promise<number | null> {
+  if (!db) return null;
+  const today = localDayKey();
+  const row = await db.getFirstAsync<{ last_milestone_award_date: string | null }>(
+    'SELECT last_milestone_award_date FROM xp WHERE id = 1'
+  );
+  if (row?.last_milestone_award_date === today) return null;
+
+  await addXp(amount, 'streak_milestone', metadata);
+  await db.runAsync('UPDATE xp SET last_milestone_award_date = ? WHERE id = 1', [today]);
+  return amount;
+}
+
+export async function getRecentXpEvents(limit = 20): Promise<XpEvent[]> {
+  if (!db) return [];
+  const rows = await db.getAllAsync<{
+    id: number;
+    date: string;
+    amount: number;
+    source: string;
+    metadata: string | null;
+    created_at: string;
+  }>('SELECT * FROM xp_events ORDER BY created_at DESC LIMIT ?', [limit]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    date: row.date,
+    amount: row.amount,
+    source: row.source,
+    metadata: row.metadata,
+    createdAt: row.created_at,
+  }));
+}
+
 // ─── App settings ─────────────────────────────────────────────────────────────
 
 export async function getSetting(key: string): Promise<string | null> {
@@ -477,16 +616,28 @@ export async function setSetting(key: string, value: string): Promise<void> {
 
 export async function saveNudgeSchedule(fireTimes: Date[]): Promise<void> {
   if (!db) return;
-  const today = localDayKey();
+  const scheduleDates = [...new Set(fireTimes.map((t) => localDayKey(t)))];
+  if (scheduleDates.length === 0) {
+    await clearNudgeScheduleFromToday();
+    return;
+  }
+
   await db.withTransactionAsync(async () => {
-    await db!.runAsync('DELETE FROM scheduled_nudges WHERE date = ?', [today]);
+    for (const date of scheduleDates) {
+      await db!.runAsync('DELETE FROM scheduled_nudges WHERE date = ?', [date]);
+    }
     for (const t of fireTimes) {
       await db!.runAsync(
         'INSERT INTO scheduled_nudges (date, fire_at) VALUES (?, ?)',
-        [today, t.getTime()]
+        [localDayKey(t), t.getTime()]
       );
     }
   });
+}
+
+export async function clearNudgeScheduleFromToday(): Promise<void> {
+  if (!db) return;
+  await db.runAsync('DELETE FROM scheduled_nudges WHERE date >= ?', [localDayKey()]);
 }
 
 export async function getLastFiredNudge(): Promise<number | null> {
@@ -499,4 +650,13 @@ export async function getLastFiredNudge(): Promise<number | null> {
     [today, now, tenMinutesAgo]
   );
   return row?.fire_at ?? null;
+}
+
+export async function getFiredNudgeCountToday(): Promise<number> {
+  if (!db) return 0;
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM scheduled_nudges WHERE date = ? AND fire_at <= ?',
+    [localDayKey(), Date.now()]
+  );
+  return row?.count ?? 0;
 }

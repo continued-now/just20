@@ -7,7 +7,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>just20</string>
+    <string>just20-jake</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -27,8 +27,8 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>just20</string>
-          <string>com.anonymous.just20</string>
+          <string>just20-jake</string>
+          <string>com.anonymous.just20jake</string>
         </array>
       </dict>
     </array>
@@ -38,6 +38,10 @@
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+      <string>instagram-stories</string>
+    </array>
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>
@@ -46,9 +50,11 @@
       <true/>
     </dict>
     <key>NSCameraUsageDescription</key>
-    <string>just20 needs the front camera to count your push-ups using pose detection.</string>
+    <string>just20-jake needs the front camera to count your push-ups using pose detection.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>just20-jake shows your location on your share card.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>just20 saves your completion videos to share on social media.</string>
+    <string>just20-jake saves your completion card to your photos so you can share it.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Allow $(PRODUCT_NAME) to access your photos</string>
     <key>NSUserActivityTypes</key>

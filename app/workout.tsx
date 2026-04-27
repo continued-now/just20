@@ -1,11 +1,12 @@
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, LayoutChangeEvent, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Camera,
   CameraRuntimeError,
+  runAtTargetFps,
   useCameraDevice,
   useCameraPermission,
   useFrameProcessor,
@@ -18,15 +19,34 @@ import { colors, fontSize, radius, spacing } from '../constants/theme';
 import {
   KP,
   analyzePose,
+  getPoseBounds,
+  mapCropKeypoints,
   parseMoveNetOutput,
+  smoothPoseAnalysis,
   type Keypoint,
   type PushupPhase,
 } from '../lib/poseDetection';
-import { saveSession, setSetting } from '../lib/db';
-import { cancelAllNudges } from '../lib/notifications';
+import { getFiredNudgeCountToday, getSetting, saveSession, setSetting } from '../lib/db';
+import {
+  DEFAULT_SCHEDULED_HOUR,
+  cancelAllNudges,
+  scheduleWindowWithFallbackNudges,
+  scheduleWindowedNotification,
+} from '../lib/notifications';
 
 const TARGET = 20;
 const MIN_OVERLAY_SCORE = 0.2;
+const MODEL_INPUT_SIZE = 192;
+const PRIMARY_CROP_SCALE = 0.78;
+const SECONDARY_CROP_SCALE = 0.5;
+
+const PERFORMANCE_CONFIG = {
+  previewFps: 4,
+  activeFps: 15,
+  recoveryFps: 20,
+  smoothingAlpha: 0.32,
+};
+
 const SKELETON_LINKS: Array<[number, number]> = [
   [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
   [KP.LEFT_SHOULDER, KP.LEFT_ELBOW],
@@ -48,6 +68,13 @@ type PoseOverlayFrame = {
   feedback: string;
   confidence: number;
   elbowAngle: number;
+  calibration: string;
+  trackingQuality: number;
+  bodyInFrame: boolean;
+  targetFps: number;
+  inferenceMs: number;
+  updateFps: number;
+  manuallyAdjusted: boolean;
 };
 
 type OverlaySize = {
@@ -59,10 +86,12 @@ function PoseSkeleton({
   pose,
   size,
   mirrored,
+  secondary = false,
 }: {
   pose: PoseOverlayFrame | null;
   size: OverlaySize;
   mirrored: boolean;
+  secondary?: boolean;
 }) {
   if (!pose || size.width <= 0 || size.height <= 0) return null;
 
@@ -93,6 +122,7 @@ function PoseSkeleton({
             key={`${fromIndex}-${toIndex}`}
             style={[
               styles.skeletonLine,
+              secondary && styles.skeletonLineSecondary,
               {
                 left: (start.x + end.x) / 2 - length / 2,
                 top: (start.y + end.y) / 2 - 2,
@@ -112,6 +142,7 @@ function PoseSkeleton({
             key={index}
             style={[
               styles.skeletonJoint,
+              secondary && styles.skeletonJointSecondary,
               kp.score < 0.45 && styles.skeletonJointLow,
               {
                 left: point.x - 5,
@@ -161,6 +192,50 @@ function PaceGraph({ timestamps }: { timestamps: number[] }) {
   );
 }
 
+type CropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function clamp01(value: number): number {
+  'worklet';
+  return Math.max(0, Math.min(1, value));
+}
+
+function makeSquareCrop(frameWidth: number, frameHeight: number, centerX: number, centerY: number, scale: number): CropRect {
+  'worklet';
+  const maxSide = Math.min(frameWidth, frameHeight);
+  const side = Math.max(96, maxSide * scale);
+  const x = Math.max(0, Math.min(frameWidth - side, centerX * frameWidth - side / 2));
+  const y = Math.max(0, Math.min(frameHeight - side, centerY * frameHeight - side / 2));
+  return { x, y, width: side, height: side };
+}
+
+function isTapInsidePose(pose: PoseOverlayFrame | null, x: number, y: number, mirrored: boolean): boolean {
+  if (!pose) return false;
+  let minX = 1;
+  let minY = 1;
+  let maxX = 0;
+  let maxY = 0;
+  let visible = 0;
+
+  for (const kp of pose.keypoints) {
+    if (kp.score < MIN_OVERLAY_SCORE) continue;
+    const screenX = mirrored ? 1 - kp.x : kp.x;
+    minX = Math.min(minX, screenX);
+    minY = Math.min(minY, kp.y);
+    maxX = Math.max(maxX, screenX);
+    maxY = Math.max(maxY, kp.y);
+    visible += 1;
+  }
+
+  if (visible < 4) return false;
+  const pad = 0.08;
+  return x >= minX - pad && x <= maxX + pad && y >= minY - pad && y <= maxY + pad;
+}
+
 export default function WorkoutScreen() {
   const router = useRouter();
   const { hasPermission, requestPermission } = useCameraPermission();
@@ -168,6 +243,7 @@ export default function WorkoutScreen() {
   const backDevice = useCameraDevice('back');
   const device = frontDevice ?? backDevice;
   const usingFallbackCamera = !frontDevice && !!backDevice;
+  const performanceConfig = PERFORMANCE_CONFIG;
   const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
   const { resize } = useResizePlugin();
 
@@ -181,8 +257,12 @@ export default function WorkoutScreen() {
   const [repTimestamps, setRepTimestamps] = useState<number[]>([]);
   const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
   const [poseFrame, setPoseFrame] = useState<PoseOverlayFrame | null>(null);
+  const [secondaryPoseFrame, setSecondaryPoseFrame] = useState<PoseOverlayFrame | null>(null);
   const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [manualAdjustments, setManualAdjustments] = useState(0);
+  const [showCalibration, setShowCalibration] = useState(false);
+  const [secondaryTrackingRequested, setSecondaryTrackingRequested] = useState(false);
 
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
@@ -197,10 +277,33 @@ export default function WorkoutScreen() {
   const lastFeedbackTime = useSharedValue(0);
   const isKneeDrop = useSharedValue(false);
   const lastPoseTime = useSharedValue(0);
+  const smoothedElbowAngle = useSharedValue(0);
+  const smoothedConfidence = useSharedValue(0);
+  const secondarySmoothedElbowAngle = useSharedValue(0);
+  const secondarySmoothedConfidence = useSharedValue(0);
+  const previewPoseFps = useSharedValue(PERFORMANCE_CONFIG.previewFps);
+  const activePoseFps = useSharedValue(PERFORMANCE_CONFIG.activeFps);
+  const recoveryPoseFps = useSharedValue(PERFORMANCE_CONFIG.recoveryFps);
+  const smoothingAlpha = useSharedValue(PERFORMANCE_CONFIG.smoothingAlpha);
+  const manuallyAdjusted = useSharedValue(false);
+  const primaryLocked = useSharedValue(false);
+  const primaryCenterX = useSharedValue(0.5);
+  const primaryCenterY = useSharedValue(0.5);
+  const secondaryEnabled = useSharedValue(false);
+  const secondaryCenterX = useSharedValue(0.5);
+  const secondaryCenterY = useSharedValue(0.5);
+  const lastSecondaryPoseTime = useSharedValue(0);
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
   }, [hasPermission, requestPermission]);
+
+  useEffect(() => {
+    previewPoseFps.value = performanceConfig.previewFps;
+    activePoseFps.value = performanceConfig.activeFps;
+    recoveryPoseFps.value = performanceConfig.recoveryFps;
+    smoothingAlpha.value = performanceConfig.smoothingAlpha;
+  }, [performanceConfig, previewPoseFps, activePoseFps, recoveryPoseFps, smoothingAlpha]);
 
   // Elapsed timer — display only, starts from first rep
   useEffect(() => {
@@ -218,16 +321,67 @@ export default function WorkoutScreen() {
       phase: PushupPhase,
       confidence: number,
       elbowAngle: number,
+      calibration: string,
+      trackingQuality: number,
+      bodyInFrame: boolean,
+      targetFps: number,
+      inferenceMs: number,
+      updateFps: number,
       count: number,
-      fb: string
+      fb: string,
+      adjusted: boolean
     ) => {
-      setPoseFrame({ keypoints: kps, phase, confidence, elbowAngle, feedback: fb });
+      setPoseFrame({
+        keypoints: kps,
+        phase,
+        confidence,
+        elbowAngle,
+        calibration,
+        trackingQuality,
+        bodyInFrame,
+        targetFps,
+        inferenceMs,
+        updateFps,
+        feedback: fb,
+        manuallyAdjusted: adjusted,
+      });
       setReps(count);
       setFeedback(fb);
       if (count >= TARGET && !finishedRef.current) {
         finishedRef.current = true;
         setFinished(true);
       }
+    })
+  ).current;
+
+  const onSecondaryTrackingUpdate = useRef(
+    Worklets.createRunOnJS((
+      kps: Keypoint[],
+      phase: PushupPhase,
+      confidence: number,
+      elbowAngle: number,
+      calibration: string,
+      trackingQuality: number,
+      bodyInFrame: boolean,
+      targetFps: number,
+      inferenceMs: number,
+      updateFps: number,
+      fb: string
+    ) => {
+      setSecondaryPoseFrame({
+        keypoints: kps,
+        phase,
+        confidence,
+        elbowAngle,
+        calibration,
+        trackingQuality,
+        bodyInFrame,
+        targetFps,
+        inferenceMs,
+        updateFps,
+        feedback: fb,
+        manuallyAdjusted: false,
+      });
     })
   ).current;
 
@@ -281,81 +435,249 @@ export default function WorkoutScreen() {
   const frameProcessor = useFrameProcessor(
     (frame) => {
       'worklet';
-      if (model.state !== 'loaded' || !model.model) return;
+      const loadedModel = model.model;
+      if (model.state !== 'loaded' || !loadedModel) return;
+      const targetFps = !isStarted.value
+        ? previewPoseFps.value
+        : smoothedConfidence.value < 0.4
+        ? recoveryPoseFps.value
+        : activePoseFps.value;
 
-      const resized = resize(frame, {
-        scale: { width: 192, height: 192 },
-        pixelFormat: 'rgb',
-        dataType: 'float32',
-      });
+      runAtTargetFps(targetFps, () => {
+        'worklet';
+        const inferenceStart = performance.now();
+        const primaryCrop = primaryLocked.value
+          ? makeSquareCrop(frame.width, frame.height, primaryCenterX.value, primaryCenterY.value, PRIMARY_CROP_SCALE)
+          : makeSquareCrop(frame.width, frame.height, 0.5, 0.5, 1);
+        const resized = resize(frame, {
+          crop: primaryCrop,
+          scale: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE },
+          pixelFormat: 'rgb',
+          dataType: 'float32',
+        });
 
-      const outputs = model.model.runSync([resized]);
-      const raw = outputs[0] as Float32Array;
-      const kps = parseMoveNetOutput(raw);
-      const analysis = analyzePose(kps);
-      const { phase, feedback: fb, confidence, elbowAngle } = analysis;
-      const now = Date.now();
-
-      if (!isStarted.value) {
-        if (now - lastPoseTime.value > 120) {
-          lastPoseTime.value = now;
-          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, fb);
+        const outputs = loadedModel.runSync([resized]);
+        const raw = outputs[0] as Float32Array;
+        const rawKps = parseMoveNetOutput(raw);
+        const kps = mapCropKeypoints(
+          rawKps,
+          primaryCrop.x,
+          primaryCrop.y,
+          primaryCrop.width,
+          primaryCrop.height,
+          frame.width,
+          frame.height
+        );
+        const rawAnalysis = analyzePose(rawKps);
+        const primaryBounds = getPoseBounds(kps, 0.25);
+        if (primaryBounds && (rawAnalysis.bodyInFrame || rawAnalysis.confidence > 0.35)) {
+          if (!primaryLocked.value) {
+            primaryCenterX.value = primaryBounds.centerX;
+            primaryCenterY.value = primaryBounds.centerY;
+          } else {
+            primaryCenterX.value = primaryCenterX.value * 0.78 + primaryBounds.centerX * 0.22;
+            primaryCenterY.value = primaryCenterY.value * 0.78 + primaryBounds.centerY * 0.22;
+          }
+          primaryLocked.value = true;
         }
-        return;
-      }
 
-      // Knee-drop detection: knees at floor level (near wrist Y) + hip sagging
-      if (phase === 'down') {
-        const lk = kps[13]; // LEFT_KNEE
-        const rk = kps[14]; // RIGHT_KNEE
-        const lkOk = lk.score > 0.3;
-        const rkOk = rk.score > 0.3;
-        if (lkOk || rkOk) {
-          const kneeY = lkOk ? lk.y : rk.y;
-          const lw = kps[9]; const rw = kps[10]; // LEFT_WRIST, RIGHT_WRIST
-          const ls = kps[5]; const rs = kps[6]; // LEFT_SHOULDER, RIGHT_SHOULDER
-          const lh = kps[11]; const rh = kps[12]; // LEFT_HIP, RIGHT_HIP
-          const wristY = lw.score > 0.25 ? lw.y : (rw.score > 0.25 ? rw.y : 0);
-          const shoulderY = ls.score > 0.25 ? ls.y : (rs.score > 0.25 ? rs.y : 0);
-          const hipY = lh.score > 0.25 ? lh.y : (rh.score > 0.25 ? rh.y : 0);
-          const kneesAtFloor = wristY > 0 && Math.abs(kneeY - wristY) < 0.12;
-          const hipDropped = hipY > 0 && shoulderY > 0 && hipY > shoulderY + 0.1;
-          if (kneesAtFloor && hipDropped) {
-            isKneeDrop.value = true;
+        if (rawAnalysis.elbowAngle > 0 && rawAnalysis.confidence > 0) {
+          const alpha = smoothingAlpha.value;
+          smoothedElbowAngle.value = smoothedElbowAngle.value === 0
+            ? rawAnalysis.elbowAngle
+            : smoothedElbowAngle.value * (1 - alpha) + rawAnalysis.elbowAngle * alpha;
+          smoothedConfidence.value = smoothedConfidence.value === 0
+            ? rawAnalysis.confidence
+            : smoothedConfidence.value * 0.75 + rawAnalysis.confidence * 0.25;
+        } else {
+          smoothedElbowAngle.value = smoothedElbowAngle.value * 0.82;
+          smoothedConfidence.value = smoothedConfidence.value * 0.82;
+        }
+
+        const analysis = smoothPoseAnalysis(
+          rawAnalysis,
+          smoothedElbowAngle.value,
+          smoothedConfidence.value
+        );
+        const { phase, feedback: fb, confidence, elbowAngle } = analysis;
+        const now = Date.now();
+        const lastPoseAt = lastPoseTime.value;
+        const updateFps = lastPoseAt > 0 ? Math.min(60, 1000 / Math.max(1, now - lastPoseAt)) : targetFps;
+        const inferenceMs = performance.now() - inferenceStart;
+
+        if (secondaryEnabled.value) {
+          const secondaryStart = performance.now();
+          const secondaryCrop = makeSquareCrop(
+            frame.width,
+            frame.height,
+            secondaryCenterX.value,
+            secondaryCenterY.value,
+            SECONDARY_CROP_SCALE
+          );
+          const secondaryResized = resize(frame, {
+            crop: secondaryCrop,
+            scale: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE },
+            pixelFormat: 'rgb',
+            dataType: 'float32',
+          });
+          const secondaryOutputs = loadedModel.runSync([secondaryResized]);
+          const secondaryRaw = secondaryOutputs[0] as Float32Array;
+          const secondaryRawKps = parseMoveNetOutput(secondaryRaw);
+          const secondaryKps = mapCropKeypoints(
+            secondaryRawKps,
+            secondaryCrop.x,
+            secondaryCrop.y,
+            secondaryCrop.width,
+            secondaryCrop.height,
+            frame.width,
+            frame.height
+          );
+          const secondaryRawAnalysis = analyzePose(secondaryRawKps);
+          if (secondaryRawAnalysis.elbowAngle > 0 && secondaryRawAnalysis.confidence > 0) {
+            const alpha = smoothingAlpha.value;
+            secondarySmoothedElbowAngle.value = secondarySmoothedElbowAngle.value === 0
+              ? secondaryRawAnalysis.elbowAngle
+              : secondarySmoothedElbowAngle.value * (1 - alpha) + secondaryRawAnalysis.elbowAngle * alpha;
+            secondarySmoothedConfidence.value = secondarySmoothedConfidence.value === 0
+              ? secondaryRawAnalysis.confidence
+              : secondarySmoothedConfidence.value * 0.75 + secondaryRawAnalysis.confidence * 0.25;
+          } else {
+            secondarySmoothedElbowAngle.value = secondarySmoothedElbowAngle.value * 0.82;
+            secondarySmoothedConfidence.value = secondarySmoothedConfidence.value * 0.82;
+          }
+
+          const secondaryAnalysis = smoothPoseAnalysis(
+            secondaryRawAnalysis,
+            secondarySmoothedElbowAngle.value,
+            secondarySmoothedConfidence.value
+          );
+          const secondaryBounds = getPoseBounds(secondaryKps, 0.25);
+          if (secondaryBounds && (secondaryRawAnalysis.bodyInFrame || secondaryRawAnalysis.confidence > 0.3)) {
+            secondaryCenterX.value = secondaryCenterX.value * 0.72 + secondaryBounds.centerX * 0.28;
+            secondaryCenterY.value = secondaryCenterY.value * 0.72 + secondaryBounds.centerY * 0.28;
+          }
+
+          if (now - lastSecondaryPoseTime.value > 140) {
+            lastSecondaryPoseTime.value = now;
+            onSecondaryTrackingUpdate(
+              secondaryKps,
+              secondaryAnalysis.phase,
+              secondaryAnalysis.confidence,
+              secondaryAnalysis.elbowAngle,
+              secondaryAnalysis.calibration,
+              secondaryAnalysis.trackingQuality,
+              secondaryAnalysis.bodyInFrame,
+              targetFps,
+              performance.now() - secondaryStart,
+              updateFps,
+              secondaryAnalysis.feedback
+            );
           }
         }
-      } else if (phase === 'up') {
-        isKneeDrop.value = false;
-      }
 
-      if (phase === 'down' && !wentDown.value) {
-        wentDown.value = true;
-        lastDownTime.value = now;
-      }
+        if (!isStarted.value) {
+          if (now - lastPoseTime.value > 120) {
+            lastPoseTime.value = now;
+            onTrackingUpdate(
+              kps,
+              phase,
+              confidence,
+              elbowAngle,
+              analysis.calibration,
+              analysis.trackingQuality,
+              analysis.bodyInFrame,
+              targetFps,
+              inferenceMs,
+              updateFps,
+              repCount.value,
+              fb,
+              manuallyAdjusted.value
+            );
+          }
+          return;
+        }
 
-      if (phase === 'up' && wentDown.value && now - lastDownTime.value > 350) {
-        if (isKneeDrop.value) {
-          wentDown.value = false;
+        // Knee-drop detection: knees at floor level (near wrist Y) + hip sagging
+        if (phase === 'down') {
+          const lk = rawKps[13]; // LEFT_KNEE
+          const rk = rawKps[14]; // RIGHT_KNEE
+          const lkOk = lk.score > 0.3;
+          const rkOk = rk.score > 0.3;
+          if (lkOk || rkOk) {
+            const kneeY = lkOk ? lk.y : rk.y;
+            const lw = rawKps[9]; const rw = rawKps[10]; // LEFT_WRIST, RIGHT_WRIST
+            const ls = rawKps[5]; const rs = rawKps[6]; // LEFT_SHOULDER, RIGHT_SHOULDER
+            const lh = rawKps[11]; const rh = rawKps[12]; // LEFT_HIP, RIGHT_HIP
+            const wristY = lw.score > 0.25 ? lw.y : (rw.score > 0.25 ? rw.y : 0);
+            const shoulderY = ls.score > 0.25 ? ls.y : (rs.score > 0.25 ? rs.y : 0);
+            const hipY = lh.score > 0.25 ? lh.y : (rh.score > 0.25 ? rh.y : 0);
+            const kneesAtFloor = wristY > 0 && Math.abs(kneeY - wristY) < 0.12;
+            const hipDropped = hipY > 0 && shoulderY > 0 && hipY > shoulderY + 0.1;
+            if (kneesAtFloor && hipDropped) {
+              isKneeDrop.value = true;
+            }
+          }
+        } else if (phase === 'up') {
           isKneeDrop.value = false;
-          onNoRep();
+        }
+
+        if (phase === 'down' && !wentDown.value) {
+          wentDown.value = true;
+          lastDownTime.value = now;
+        }
+
+        if (phase === 'up' && wentDown.value && now - lastDownTime.value > 350) {
+          if (isKneeDrop.value) {
+            wentDown.value = false;
+            isKneeDrop.value = false;
+            onNoRep();
+          } else {
+            repCount.value = repCount.value + 1;
+            wentDown.value = false;
+            lastSentCount.value = repCount.value;
+            lastFeedbackTime.value = now;
+            lastPoseTime.value = now;
+            onTrackingUpdate(
+              kps,
+              phase,
+              confidence,
+              elbowAngle,
+              analysis.calibration,
+              analysis.trackingQuality,
+              analysis.bodyInFrame,
+              targetFps,
+              inferenceMs,
+              updateFps,
+              repCount.value,
+              'Great rep!',
+              manuallyAdjusted.value
+            );
+          }
         } else {
-          repCount.value = repCount.value + 1;
-          wentDown.value = false;
-          lastSentCount.value = repCount.value;
-          lastFeedbackTime.value = now;
-          lastPoseTime.value = now;
-          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, 'Great rep!');
+          const countChanged = repCount.value !== lastSentCount.value;
+          const poseStale = now - lastPoseTime.value > 120;
+          if (countChanged || now - lastFeedbackTime.value > 500 || poseStale) {
+            lastSentCount.value = repCount.value;
+            lastFeedbackTime.value = now;
+            lastPoseTime.value = now;
+            onTrackingUpdate(
+              kps,
+              phase,
+              confidence,
+              elbowAngle,
+              analysis.calibration,
+              analysis.trackingQuality,
+              analysis.bodyInFrame,
+              targetFps,
+              inferenceMs,
+              updateFps,
+              repCount.value,
+              fb,
+              manuallyAdjusted.value
+            );
+          }
         }
-      } else {
-        const countChanged = repCount.value !== lastSentCount.value;
-        const poseStale = now - lastPoseTime.value > 120;
-        if (countChanged || now - lastFeedbackTime.value > 500 || poseStale) {
-          lastSentCount.value = repCount.value;
-          lastFeedbackTime.value = now;
-          lastPoseTime.value = now;
-          onTrackingUpdate(kps, phase, confidence, elbowAngle, repCount.value, fb);
-        }
-      }
+      });
     },
     [
       model,
@@ -366,7 +688,24 @@ export default function WorkoutScreen() {
       lastSentCount,
       lastFeedbackTime,
       lastPoseTime,
+      smoothedElbowAngle,
+      smoothedConfidence,
+      secondarySmoothedElbowAngle,
+      secondarySmoothedConfidence,
+      previewPoseFps,
+      activePoseFps,
+      recoveryPoseFps,
+      smoothingAlpha,
+      manuallyAdjusted,
+      primaryLocked,
+      primaryCenterX,
+      primaryCenterY,
+      secondaryEnabled,
+      secondaryCenterX,
+      secondaryCenterY,
+      lastSecondaryPoseTime,
       onTrackingUpdate,
+      onSecondaryTrackingUpdate,
       onNoRep,
       resize,
       isKneeDrop,
@@ -390,6 +729,11 @@ export default function WorkoutScreen() {
     lastFeedbackTime.value = 0;
     isKneeDrop.value = false;
     lastPoseTime.value = 0;
+    smoothedElbowAngle.value = 0;
+    smoothedConfidence.value = 0;
+    secondarySmoothedElbowAngle.value = 0;
+    secondarySmoothedConfidence.value = 0;
+    manuallyAdjusted.value = false;
     finishedRef.current = false;
     prevRepsRef.current = 0;
     startTimeRef.current = Date.now();
@@ -401,17 +745,116 @@ export default function WorkoutScreen() {
     setElapsed(0);
     setRepTimestamps([]);
     setMilestoneMsg(null);
+    setManualAdjustments(0);
     // isStarted.value set after countdown reaches 0
+  }
+
+  function handleCalibrate() {
+    primaryLocked.value = false;
+    primaryCenterX.value = 0.5;
+    primaryCenterY.value = 0.5;
+    smoothedElbowAngle.value = 0;
+    smoothedConfidence.value = 0;
+    secondaryEnabled.value = false;
+    secondaryCenterX.value = 0.5;
+    secondaryCenterY.value = 0.5;
+    secondarySmoothedElbowAngle.value = 0;
+    secondarySmoothedConfidence.value = 0;
+    lastSecondaryPoseTime.value = 0;
+    setSecondaryPoseFrame(null);
+    setSecondaryTrackingRequested(false);
+    setShowCalibration(true);
+    setFeedback('Get into position');
+    Haptics.selectionAsync();
+  }
+
+  function handleStopSecondaryTracking() {
+    secondaryEnabled.value = false;
+    secondaryCenterX.value = 0.5;
+    secondaryCenterY.value = 0.5;
+    secondarySmoothedElbowAngle.value = 0;
+    secondarySmoothedConfidence.value = 0;
+    lastSecondaryPoseTime.value = 0;
+    setSecondaryPoseFrame(null);
+    setSecondaryTrackingRequested(false);
+    Haptics.selectionAsync();
+  }
+
+  function handleCameraTap(event: GestureResponderEvent) {
+    if (overlaySize.width <= 0 || overlaySize.height <= 0 || finished) return;
+
+    const screenX = clamp01(event.nativeEvent.locationX / overlaySize.width);
+    const screenY = clamp01(event.nativeEvent.locationY / overlaySize.height);
+    const mirrored = device?.position === 'front';
+
+    if (isTapInsidePose(poseFrame, screenX, screenY, mirrored)) {
+      return;
+    }
+
+    const frameX = mirrored ? 1 - screenX : screenX;
+    secondaryCenterX.value = clamp01(frameX);
+    secondaryCenterY.value = screenY;
+    secondaryEnabled.value = true;
+    secondarySmoothedElbowAngle.value = 0;
+    secondarySmoothedConfidence.value = 0;
+    lastSecondaryPoseTime.value = 0;
+    setSecondaryPoseFrame(null);
+    setSecondaryTrackingRequested(true);
+    Haptics.selectionAsync();
+  }
+
+  function handleManualRep(delta: number) {
+    const next = Math.max(0, Math.min(TARGET, reps + delta));
+    if (next === reps) return;
+
+    repCount.value = next;
+    lastSentCount.value = next;
+    lastFeedbackTime.value = Date.now();
+    manuallyAdjusted.value = true;
+    setManualAdjustments((current) => current + delta);
+    setReps(next);
+    setFeedback(delta > 0 ? 'Rep added' : 'Rep removed');
+    if (delta < 0) {
+      prevRepsRef.current = next;
+      setRepTimestamps((prev) => prev.slice(0, -1));
+    }
+
+    if (next >= TARGET && !finishedRef.current) {
+      finishedRef.current = true;
+      setFinished(true);
+    }
+  }
+
+  async function clearCompletedWorkoutReminders() {
+    const [savedMode, savedHour] = await Promise.all([
+      getSetting('notification_mode'),
+      getSetting('scheduled_hour'),
+    ]);
+
+    if (savedMode === 'scheduled_fallback') {
+      const scheduledHour = Number.parseInt(savedHour ?? String(DEFAULT_SCHEDULED_HOUR), 10) || DEFAULT_SCHEDULED_HOUR;
+      await scheduleWindowWithFallbackNudges(scheduledHour, { skipToday: true });
+      return;
+    }
+
+    if (savedMode === 'scheduled' || savedMode === 'strict') {
+      const scheduledHour = Number.parseInt(savedHour ?? String(DEFAULT_SCHEDULED_HOUR), 10) || DEFAULT_SCHEDULED_HOUR;
+      await scheduleWindowedNotification(scheduledHour, { skipToday: true });
+      return;
+    }
+
+    await cancelAllNudges();
   }
 
   async function handleFinish() {
     isStarted.value = false;
     const duration = Date.now() - startTimeRef.current;
+    const nudgesUsed = await getFiredNudgeCountToday();
     await saveSession(reps, duration);
-    await cancelAllNudges();
+    await clearCompletedWorkoutReminders();
     router.replace({
       pathname: '/completion',
-      params: { reps: String(reps), duration: String(duration) },
+      params: { reps: String(reps), duration: String(duration), nudgesUsed: String(nudgesUsed) },
     });
   }
 
@@ -426,7 +869,7 @@ export default function WorkoutScreen() {
             isStarted.value = false;
             const duration = Date.now() - startTimeRef.current;
             await saveSession(reps, duration);
-            await cancelAllNudges();
+            if (reps >= TARGET) await clearCompletedWorkoutReminders();
             router.back();
           },
         },
@@ -467,6 +910,7 @@ export default function WorkoutScreen() {
         ? 'Go!'
         : String(countdown)
       : milestoneMsg ?? feedback;
+  const shouldShowCalibration = !!poseFrame && !started && (showCalibration || !poseFrame.bodyInFrame);
 
   return (
     <View style={styles.root}>
@@ -487,8 +931,16 @@ export default function WorkoutScreen() {
       )}
 
       <View style={styles.poseLayer} pointerEvents="none" onLayout={handleOverlayLayout}>
+        <PoseSkeleton
+          pose={secondaryPoseFrame}
+          size={overlaySize}
+          mirrored={device?.position === 'front'}
+          secondary
+        />
         <PoseSkeleton pose={poseFrame} size={overlaySize} mirrored={device?.position === 'front'} />
       </View>
+
+      <Pressable style={styles.tapLayer} onPress={handleCameraTap} />
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
@@ -521,6 +973,43 @@ export default function WorkoutScreen() {
               </Text>
             </View>
           )}
+          {shouldShowCalibration && (
+            <View style={styles.calibrationCard}>
+              <Text style={styles.calibrationTitle}>
+                {poseFrame.bodyInFrame ? 'Ready to track' : 'Calibrating camera'}
+              </Text>
+              <Text style={styles.calibrationText}>{poseFrame.calibration}</Text>
+              <View style={styles.qualityTrack}>
+                <View
+                  style={[
+                    styles.qualityFill,
+                    { width: `${Math.round(poseFrame.trackingQuality * 100)}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+          {!started && (
+            <TouchableOpacity
+              onPress={handleCalibrate}
+              style={styles.calibrationBtn}
+              activeOpacity={0.75}
+            >
+              <Text style={styles.calibrationBtnText}>
+                {poseFrame?.bodyInFrame ? 'Recalibrate camera' : 'Calibrate camera'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          {secondaryTrackingRequested && (
+            <View style={styles.secondaryTrackerPill}>
+              <Text style={styles.secondaryTrackerText}>
+                {secondaryPoseFrame?.bodyInFrame ? 'Extra body tracked' : 'Looking for tapped body'}
+              </Text>
+              <TouchableOpacity onPress={handleStopSecondaryTracking} activeOpacity={0.75}>
+                <Text style={styles.secondaryTrackerStop}>Stop</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {usingFallbackCamera && (
             <Text style={styles.cameraNote}>Using back camera fallback</Text>
           )}
@@ -544,6 +1033,29 @@ export default function WorkoutScreen() {
               </View>
               {started && repTimestamps.length >= 2 && (
                 <PaceGraph timestamps={repTimestamps} />
+              )}
+              {started && (
+                <View style={styles.adjustRow}>
+                  <TouchableOpacity
+                    onPress={() => handleManualRep(-1)}
+                    style={styles.adjustBtn}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.adjustBtnText}>- rep</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleManualRep(1)}
+                    style={styles.adjustBtn}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.adjustBtnText}>+ rep</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {manualAdjustments !== 0 && (
+                <Text style={styles.manualNote}>
+                  manual adjustment {manualAdjustments > 0 ? '+' : ''}{manualAdjustments}
+                </Text>
               )}
               {!started && (
                 <TouchableOpacity
@@ -581,7 +1093,8 @@ const styles = StyleSheet.create({
   },
   cameraFallbackTitle: { color: '#FFF', fontSize: fontSize.lg, fontWeight: '900' },
   cameraFallbackText: { color: 'rgba(255,255,255,0.72)', fontSize: fontSize.sm, textAlign: 'center' },
-  poseLayer: { ...StyleSheet.absoluteFillObject },
+  poseLayer: { ...StyleSheet.absoluteFillObject, zIndex: 2 },
+  tapLayer: { ...StyleSheet.absoluteFillObject, zIndex: 1 },
   skeletonLine: {
     position: 'absolute',
     height: 4,
@@ -592,6 +1105,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
   },
+  skeletonLineSecondary: {
+    backgroundColor: 'rgba(91, 196, 245, 0.82)',
+  },
   skeletonJoint: {
     position: 'absolute',
     width: 10,
@@ -601,12 +1117,16 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.success,
   },
+  skeletonJointSecondary: {
+    borderColor: colors.ice,
+    backgroundColor: 'rgba(255,255,255,0.88)',
+  },
   skeletonJointLow: {
     opacity: 0.55,
     borderColor: '#FFE082',
   },
   safe: { flex: 1, backgroundColor: colors.bg },
-  overlay: { flex: 1, justifyContent: 'space-between' },
+  overlay: { flex: 1, justifyContent: 'space-between', zIndex: 3 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
   header: {
     flexDirection: 'row',
@@ -659,6 +1179,78 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '800',
   },
+  calibrationCard: {
+    width: '100%',
+    maxWidth: 360,
+    marginTop: spacing.md,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  calibrationTitle: {
+    color: '#FFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  calibrationText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  qualityTrack: {
+    height: 6,
+    marginTop: spacing.xs,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    overflow: 'hidden',
+  },
+  qualityFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.success,
+  },
+  calibrationBtn: {
+    marginTop: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  calibrationBtnText: {
+    color: '#FFF',
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  secondaryTrackerPill: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(91,196,245,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(91,196,245,0.32)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  secondaryTrackerText: {
+    color: '#FFF',
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+  },
+  secondaryTrackerStop: {
+    color: colors.ice,
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+  },
   cameraNote: {
     marginTop: spacing.xs,
     color: 'rgba(255,255,255,0.78)',
@@ -682,6 +1274,30 @@ const styles = StyleSheet.create({
   },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.3)' },
   dotFilled: { backgroundColor: colors.success },
+  adjustRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  adjustBtn: {
+    minWidth: 92,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  adjustBtnText: {
+    color: '#FFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  manualNote: {
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+  },
   startBtn: {
     backgroundColor: '#FFF',
     borderRadius: radius.md,

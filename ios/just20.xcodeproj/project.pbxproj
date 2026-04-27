@@ -17,7 +17,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		13B07F961A680F5B00A75B9A /* just20.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = just20.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07F961A680F5B00A75B9A /* just20-jake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "just20-jake.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = just20/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = just20/Info.plist; sourceTree = "<group>"; };
 		353D26A6473F597486454E99 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-just20/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
@@ -118,7 +118,7 @@
 		83CBBA001A601CBA00E9B192 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				13B07F961A680F5B00A75B9A /* just20.app */,
+				13B07F961A680F5B00A75B9A /* just20-jake.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -154,7 +154,7 @@
 			);
 			name = just20;
 			productName = just20;
-			productReference = 13B07F961A680F5B00A75B9A /* just20.app */;
+			productReference = 13B07F961A680F5B00A75B9A /* just20-jake.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -367,8 +367,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20;
-				PRODUCT_NAME = just20;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20jake;
+				PRODUCT_NAME = "just20-jake";
 				SWIFT_OBJC_BRIDGING_HEADER = "just20/just20-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -398,8 +398,8 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20;
-				PRODUCT_NAME = just20;
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20jake;
+				PRODUCT_NAME = "just20-jake";
 				SWIFT_OBJC_BRIDGING_HEADER = "just20/just20-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

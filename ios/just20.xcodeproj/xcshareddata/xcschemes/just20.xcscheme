@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "just20.app"
+               BuildableName = "just20-jake.app"
                BlueprintName = "just20"
                ReferencedContainer = "container:just20.xcodeproj">
             </BuildableReference>
@@ -55,7 +55,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "just20.app"
+            BuildableName = "just20-jake.app"
             BlueprintName = "just20"
             ReferencedContainer = "container:just20.xcodeproj">
          </BuildableReference>
@@ -72,7 +72,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "just20.app"
+            BuildableName = "just20-jake.app"
             BlueprintName = "just20"
             ReferencedContainer = "container:just20.xcodeproj">
          </BuildableReference>

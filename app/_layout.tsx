@@ -2,14 +2,27 @@ import { Stack, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { initDb, getStreak, isCompletedToday } from '../lib/db';
+import { initDb, getSetting, getStreak, isCompletedToday, setSetting } from '../lib/db';
 import {
+  DEFAULT_NOTIFICATION_MODE,
+  DEFAULT_SCHEDULED_HOUR,
+  type NotificationMode,
+  cancelAllNudges,
+  cancelWindowedNotification,
   setupNotificationHandler,
   scheduleNudges,
   requestPermission,
   scheduleStreakAtRiskNotification,
+  scheduleWindowWithFallbackNudges,
+  scheduleWindowedNotification,
 } from '../lib/notifications';
 import { getOrCreateUser } from '../lib/user';
+
+function normalizeNotificationMode(value: string | null): NotificationMode {
+  if (value === 'scheduled_fallback' || value === 'strict' || value === 'random') return value;
+  if (value === 'scheduled') return 'strict';
+  return DEFAULT_NOTIFICATION_MODE;
+}
 
 export default function RootLayout() {
   const router = useRouter();
@@ -28,12 +41,46 @@ export default function RootLayout() {
 
       setReady(true);
 
-      // Notifications are non-blocking — schedule after UI is ready
+      if (!user.onboardingComplete) return;
+
+      // Notifications are non-blocking — schedule after UI is ready.
       requestPermission().then(async granted => {
         if (!granted) return;
-        await scheduleNudges();
-        const [s, done] = await Promise.all([getStreak(), isCompletedToday()]);
-        if (s.current > 0 && !done) await scheduleStreakAtRiskNotification(s.current);
+        const [s, done, savedMode, savedHour] = await Promise.all([
+          getStreak(),
+          isCompletedToday(),
+          getSetting('notification_mode'),
+          getSetting('scheduled_hour'),
+        ]);
+        const mode = normalizeNotificationMode(savedMode);
+        const scheduledHour = Number.parseInt(savedHour ?? String(DEFAULT_SCHEDULED_HOUR), 10) || DEFAULT_SCHEDULED_HOUR;
+
+        if (!savedMode) await setSetting('notification_mode', mode);
+        if (!savedHour) await setSetting('scheduled_hour', String(scheduledHour));
+
+        if (done) {
+          await cancelAllNudges();
+          if (mode === 'scheduled_fallback') {
+            await scheduleWindowWithFallbackNudges(scheduledHour, { skipToday: true });
+          } else if (mode === 'strict') {
+            await scheduleWindowedNotification(scheduledHour, { skipToday: true });
+          } else {
+            await cancelWindowedNotification();
+          }
+          return;
+        }
+
+        if (mode === 'scheduled_fallback') {
+          await scheduleWindowWithFallbackNudges(scheduledHour);
+        } else if (mode === 'strict') {
+          await cancelAllNudges();
+          await scheduleWindowedNotification(scheduledHour);
+        } else {
+          await cancelWindowedNotification();
+          await scheduleNudges({ source: 'random' });
+        }
+
+        if (s.current > 0) await scheduleStreakAtRiskNotification(s.current);
       });
     }
     init();

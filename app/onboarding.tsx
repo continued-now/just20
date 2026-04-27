@@ -15,7 +15,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
-import { requestPermission } from '../lib/notifications';
+import { setSetting } from '../lib/db';
+import {
+  DEFAULT_NOTIFICATION_MODE,
+  DEFAULT_SCHEDULED_HOUR,
+  requestPermission,
+  scheduleWindowWithFallbackNudges,
+} from '../lib/notifications';
 import { getOrCreateUser, markOnboardingComplete, updateUsername } from '../lib/user';
 
 const { width } = Dimensions.get('window');
@@ -70,7 +76,12 @@ export default function OnboardingScreen() {
   }
 
   async function handleAllow() {
-    await requestPermission();
+    const granted = await requestPermission();
+    if (granted) {
+      await setSetting('notification_mode', DEFAULT_NOTIFICATION_MODE);
+      await setSetting('scheduled_hour', String(DEFAULT_SCHEDULED_HOUR));
+      await scheduleWindowWithFallbackNudges(DEFAULT_SCHEDULED_HOUR);
+    }
     await finish();
   }
 

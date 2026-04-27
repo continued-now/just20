@@ -16,7 +16,7 @@ import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { getStreak, getBestCompletedTime, getCompletedSetsToday, getUserSeed } from '../lib/db';
-import { awardWorkoutCoins } from '../lib/coins';
+import { awardWorkoutXp, type WorkoutXpReward } from '../lib/xp';
 import { syncCompletionToCloud } from '../lib/social';
 import { getOrCreateUser } from '../lib/user';
 import { getDailyQuote } from '../lib/quotes';
@@ -27,13 +27,18 @@ const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
-  const { reps, duration } = useLocalSearchParams<{ reps: string; duration: string }>();
+  const { reps, duration, nudgesUsed } = useLocalSearchParams<{
+    reps: string;
+    duration: string;
+    nudgesUsed?: string;
+  }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
 
   const repCount = parseInt(reps ?? '20', 10);
   const durationMs = parseInt(duration ?? '0', 10);
   const durationSec = Math.round(durationMs / 1000);
+  const nudgeCountAtCompletion = Math.max(0, parseInt(nudgesUsed ?? '0', 10) || 0);
 
   const [buttonsVisible, setButtonsVisible] = useState(false);
   const [showMilestone, setShowMilestone] = useState(false);
@@ -46,6 +51,7 @@ export default function CompletionScreen() {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
   const [totalSessions, setTotalSessions] = useState(0);
   const [inviteCode, setInviteCode] = useState('');
+  const [reward, setReward] = useState<WorkoutXpReward | null>(null);
 
   // Hold the card for 2s before revealing buttons
   useEffect(() => {
@@ -71,8 +77,9 @@ export default function CompletionScreen() {
       if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
         setIsPB(true);
       }
-      // Award daily coins + milestone bonus, sync status to cloud
-      await awardWorkoutCoins(s.current);
+      // Award daily XP + milestone XP, sync status to cloud.
+      const earned = await awardWorkoutXp(s.current, { nudgesUsed: nudgeCountAtCompletion });
+      setReward(earned);
       syncCompletionToCloud(s.current); // fire-and-forget
     })();
   }, []);
@@ -175,6 +182,16 @@ export default function CompletionScreen() {
           {durationSec > 0 && (
             <View style={styles.pill}>
               <Text style={styles.pillText}>in {durationSec}s</Text>
+            </View>
+          )}
+          {reward && reward.daily > 0 && (
+            <View style={[styles.pill, styles.xpPill]}>
+              <Text style={styles.pillText}>+{reward.daily} XP · {reward.label}</Text>
+            </View>
+          )}
+          {reward && reward.milestone > 0 && (
+            <View style={[styles.pill, styles.xpPill]}>
+              <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
             </View>
           )}
         </View>
@@ -325,6 +342,10 @@ const styles = StyleSheet.create({
   pbPill: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
+  },
+  xpPill: {
+    backgroundColor: colors.streak,
+    borderColor: colors.streak,
   },
   pillText: {
     color: '#FFF',

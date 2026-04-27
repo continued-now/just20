@@ -1,8 +1,11 @@
-package com.anonymous.just20
+package com.anonymous.just20jake
 
 import android.app.Application
 import android.content.res.Configuration
 
+import androidx.camera.camera2.Camera2Config
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.CameraXConfig
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
@@ -16,7 +19,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 
-class MainApplication : Application(), ReactApplication {
+class MainApplication : Application(), ReactApplication, CameraXConfig.Provider {
 
   override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
       this,
@@ -37,6 +40,13 @@ class MainApplication : Application(), ReactApplication {
 
   override val reactHost: ReactHost
     get() = ReactNativeHostWrapper.createReactHost(applicationContext, reactNativeHost)
+
+  override fun getCameraXConfig(): CameraXConfig =
+    CameraXConfig.Builder.fromConfig(Camera2Config.defaultConfig())
+      // Android Emulator can expose a host webcam while still advertising missing built-in lenses.
+      // A neutral limiter keeps CameraX from rejecting the valid webcam-backed device during tests.
+      .setAvailableCamerasLimiter(CameraSelector.Builder().build())
+      .build()
 
   override fun onCreate() {
     super.onCreate()
