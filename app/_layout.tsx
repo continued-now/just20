@@ -110,6 +110,18 @@ export default function RootLayout() {
           options={{ presentation: 'fullScreenModal', animation: 'fade' }}
         />
         <Stack.Screen
+          name="challenge"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="duel"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
+          name="team"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
           name="streak-repair"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />

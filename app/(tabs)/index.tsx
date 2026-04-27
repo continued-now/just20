@@ -153,7 +153,7 @@ export default function HomeScreen() {
           )}
           {buddies.length === 0 && (
             <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.7}>
-              <Text style={styles.invitePrompt}>👥 Invite a friend to track together →</Text>
+              <Text style={styles.invitePrompt}>👥 Start a 7-day friend streak →</Text>
             </TouchableOpacity>
           )}
         </View>

@@ -18,7 +18,8 @@ import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { getStreak, getBestCompletedTime, getCompletedSetsToday, getUserSeed } from '../lib/db';
 import { awardWorkoutXp, type WorkoutXpReward } from '../lib/xp';
 import { syncCompletionToCloud } from '../lib/social';
-import { getOrCreateUser } from '../lib/user';
+import { buildChallengeShareText, getOrCreateUser } from '../lib/user';
+import { buildDuelShareText, buildMonthlyTestShareText } from '../lib/viral';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
@@ -27,10 +28,12 @@ const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
-  const { reps, duration, nudgesUsed } = useLocalSearchParams<{
+  const { reps, duration, nudgesUsed, mode, duelTarget } = useLocalSearchParams<{
     reps: string;
     duration: string;
     nudgesUsed?: string;
+    mode?: string;
+    duelTarget?: string;
   }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
@@ -39,6 +42,10 @@ export default function CompletionScreen() {
   const durationMs = parseInt(duration ?? '0', 10);
   const durationSec = Math.round(durationMs / 1000);
   const nudgeCountAtCompletion = Math.max(0, parseInt(nudgesUsed ?? '0', 10) || 0);
+  const workoutMode = mode === 'test' ? 'test' : mode === 'duel' ? 'duel' : 'daily';
+  const isTestMode = workoutMode === 'test';
+  const isDuelMode = workoutMode === 'duel';
+  const duelTargetSec = Math.max(10, parseInt(duelTarget ?? '60', 10) || 60);
 
   const [buttonsVisible, setButtonsVisible] = useState(false);
   const [showMilestone, setShowMilestone] = useState(false);
@@ -77,10 +84,12 @@ export default function CompletionScreen() {
       if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
         setIsPB(true);
       }
-      // Award daily XP + milestone XP, sync status to cloud.
-      const earned = await awardWorkoutXp(s.current, { nudgesUsed: nudgeCountAtCompletion });
-      setReward(earned);
-      syncCompletionToCloud(s.current); // fire-and-forget
+      // Test-mode attempts under 20 reps are receipts, not daily completions.
+      if (repCount >= 20) {
+        const earned = await awardWorkoutXp(s.current, { nudgesUsed: nudgeCountAtCompletion });
+        setReward(earned);
+        syncCompletionToCloud(s.current); // fire-and-forget
+      }
     })();
   }, []);
 
@@ -123,7 +132,15 @@ export default function CompletionScreen() {
   }
 
   async function handleShareInvite() {
-    const text = `I just did 20 pushups with Just20 🔥\n\nJoin me — add me with code: ${inviteCode}\n\n#just20 #fitness`;
+    const text = isTestMode
+      ? buildMonthlyTestShareText({
+          reps: repCount,
+          durationSeconds: durationSec > 0 ? durationSec : null,
+          inviteCode,
+        })
+      : isDuelMode
+      ? buildDuelShareText(inviteCode, durationSec > 0 ? durationSec : duelTargetSec, streak)
+      : buildChallengeShareText(inviteCode, streak, 7);
     try { await Share.share({ message: text }); } catch { /* dismissed */ }
   }
 
@@ -154,11 +171,28 @@ export default function CompletionScreen() {
     ? (MILESTONE_COPY[streak] ?? '').split('\n')[1]
     : null;
 
-  const displayReps = setsToday > 1 ? setsToday * 20 : repCount;
-  const repLabel = setsToday > 1 ? `pushups · ${setsToday} sets` : 'pushups';
-  const tagline = setsToday > 1
+  const displayReps = isTestMode ? repCount : setsToday > 1 ? setsToday * 20 : repCount;
+  const repLabel = isTestMode ? 'test reps' : setsToday > 1 ? `pushups · ${setsToday} sets` : 'pushups';
+  const tagline = isTestMode
+    ? 'monthly receipt, no hiding.'
+    : isDuelMode
+    ? 'duel receipt, clean reps only.'
+    : setsToday > 1
     ? `built different, ${setsToday} sets strong.`
     : 'built different, one set at a time.';
+  const proofLabel = isTestMode ? 'Monthly Test' : isDuelMode ? 'Duel Proof' : 'Proof Card';
+  const inviteLabel = isTestMode
+    ? 'Share test'
+    : isDuelMode
+    ? 'Call a rematch'
+    : totalSessions === 1
+    ? 'Bring a friend'
+    : 'Start a challenge';
+  const inviteSub = isTestMode
+    ? 'Turn the 30-day test into a receipt.'
+    : isDuelMode
+    ? 'Make someone beat this time.'
+    : 'Make this a 7-day pushup pact.';
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -166,6 +200,9 @@ export default function CompletionScreen() {
         <View style={styles.cardTop}>
           <Text style={styles.brand}>just20</Text>
           <Text style={styles.tagline}>{tagline}</Text>
+        </View>
+        <View style={styles.proofStamp}>
+          <Text style={styles.proofStampText}>{proofLabel}</Text>
         </View>
 
         <View style={styles.repBlock}>
@@ -194,6 +231,21 @@ export default function CompletionScreen() {
               <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
             </View>
           )}
+        </View>
+
+        <View style={styles.proofGrid}>
+          <View style={styles.proofMetric}>
+            <Text style={styles.proofMetricValue}>{durationSec > 0 ? `${durationSec}s` : '—'}</Text>
+            <Text style={styles.proofMetricLabel}>time</Text>
+          </View>
+          <View style={styles.proofMetric}>
+            <Text style={styles.proofMetricValue}>{streak}</Text>
+            <Text style={styles.proofMetricLabel}>streak</Text>
+          </View>
+          <View style={styles.proofMetric}>
+            <Text style={styles.proofMetricValue}>{reward?.daily ?? 0}</Text>
+            <Text style={styles.proofMetricLabel}>xp</Text>
+          </View>
         </View>
 
         {locationName ? <Text style={styles.location}>@ {locationName}</Text> : null}
@@ -256,12 +308,15 @@ export default function CompletionScreen() {
             >
               <Text style={styles.doAnotherBtnText}>Do another set 🔥</Text>
             </TouchableOpacity>
-            {totalSessions === 1 && inviteCode ? (
+            {inviteCode ? (
               <View style={styles.inviteBanner}>
-                <Text style={styles.inviteLabel}>Bring a friend</Text>
+                <Text style={styles.inviteLabel}>{inviteLabel}</Text>
                 <Text style={styles.inviteCode}>{inviteCode}</Text>
+                <Text style={styles.inviteSub}>{inviteSub}</Text>
                 <TouchableOpacity onPress={handleShareInvite} activeOpacity={0.8}>
-                  <Text style={styles.inviteShareText}>Share your code →</Text>
+                  <Text style={styles.inviteShareText}>
+                    {isTestMode ? 'Share test →' : isDuelMode ? 'Share duel →' : 'Share challenge →'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -299,6 +354,24 @@ const styles = StyleSheet.create({
     top: spacing.xl,
     left: spacing.xl,
     gap: 2,
+  },
+  proofStamp: {
+    position: 'absolute',
+    top: spacing.xl,
+    right: spacing.xl,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,107,53,0.48)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(255,107,53,0.13)',
+  },
+  proofStampText: {
+    color: colors.streak,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   brand: {
     fontSize: 18,
@@ -351,6 +424,33 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: fontSize.sm,
     fontWeight: '700',
+  },
+  proofGrid: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+  },
+  proofMetric: {
+    minWidth: 76,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  proofMetricValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.lg,
+    fontWeight: '900',
+  },
+  proofMetricLabel: {
+    color: 'rgba(255,255,255,0.38)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   location: {
     textAlign: 'center',
@@ -481,6 +581,11 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFFFFF',
     letterSpacing: 2,
+  },
+  inviteSub: {
+    fontSize: fontSize.xs,
+    color: 'rgba(255,255,255,0.48)',
+    fontWeight: '600',
   },
   inviteShareText: {
     fontSize: fontSize.sm,

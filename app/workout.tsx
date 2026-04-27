@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,8 +35,10 @@ import {
   scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
 } from '../lib/notifications';
+import { markMonthlyTestTaken } from '../lib/viral';
 
-const TARGET = 20;
+const STANDARD_TARGET = 20;
+const TEST_TARGET = 100;
 const MIN_OVERLAY_SCORE = 0.2;
 const MODEL_INPUT_SIZE = 192;
 const PRIMARY_CROP_SCALE = 0.78;
@@ -251,11 +253,21 @@ function isTapInsidePose(pose: PoseOverlayFrame | null, x: number, y: number, mi
 
 export default function WorkoutScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    mode?: string;
+    duelTarget?: string;
+    duelCode?: string;
+  }>();
   const { hasPermission, requestPermission } = useCameraPermission();
   const frontDevice = useCameraDevice('front');
   const backDevice = useCameraDevice('back');
   const device = frontDevice ?? backDevice;
   const usingFallbackCamera = !frontDevice && !!backDevice;
+  const workoutMode = params.mode === 'test' ? 'test' : params.mode === 'duel' ? 'duel' : 'daily';
+  const isTestMode = workoutMode === 'test';
+  const isDuelMode = workoutMode === 'duel';
+  const targetReps = isTestMode ? TEST_TARGET : STANDARD_TARGET;
+  const duelTarget = Math.max(10, Number.parseInt(params.duelTarget ?? '60', 10) || 60);
   const performanceConfig = PERFORMANCE_CONFIG;
   const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
   const { resize } = useResizePlugin();
@@ -362,7 +374,7 @@ export default function WorkoutScreen() {
       });
       setReps(count);
       setFeedback(fb);
-      if (count >= TARGET && !finishedRef.current) {
+      if (count >= targetReps && !finishedRef.current) {
         finishedRef.current = true;
         setFinished(true);
       }
@@ -419,7 +431,7 @@ export default function WorkoutScreen() {
       prevRepsRef.current = reps;
 
       Haptics.impactAsync(
-        newRep === 10 || newRep === 15 || newRep === TARGET
+        newRep === 10 || newRep === 15 || newRep === targetReps
           ? Haptics.ImpactFeedbackStyle.Heavy
           : Haptics.ImpactFeedbackStyle.Light
       );
@@ -826,7 +838,7 @@ export default function WorkoutScreen() {
   function handleManualRep(delta: number) {
     if (!started || countdown !== null || finished) return;
 
-    const next = Math.max(0, Math.min(TARGET, reps + delta));
+    const next = Math.max(0, Math.min(targetReps, reps + delta));
     if (next === reps) return;
 
     repCount.value = next;
@@ -841,7 +853,7 @@ export default function WorkoutScreen() {
       setRepTimestamps((prev) => prev.slice(0, -1));
     }
 
-    if (next >= TARGET && !finishedRef.current) {
+    if (next >= targetReps && !finishedRef.current) {
       finishedRef.current = true;
       setFinished(true);
     }
@@ -878,10 +890,17 @@ export default function WorkoutScreen() {
     const duration = getWorkoutDurationMs();
     const nudgesUsed = await getFiredNudgeCountToday();
     await saveSession(reps, duration);
-    await clearCompletedWorkoutReminders();
+    if (isTestMode) await markMonthlyTestTaken();
+    if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
     router.replace({
       pathname: '/completion',
-      params: { reps: String(reps), duration: String(duration), nudgesUsed: String(nudgesUsed) },
+      params: {
+        reps: String(reps),
+        duration: String(duration),
+        nudgesUsed: String(nudgesUsed),
+        mode: workoutMode,
+        duelTarget: String(duelTarget),
+      },
     });
   }
 
@@ -906,7 +925,7 @@ export default function WorkoutScreen() {
             isStarted.value = false;
             const duration = getWorkoutDurationMs();
             await saveSession(reps, duration);
-            if (reps >= TARGET) await clearCompletedWorkoutReminders();
+            if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
             router.back();
           },
         },
@@ -997,6 +1016,13 @@ export default function WorkoutScreen() {
               <Text style={styles.timerText}>{formatElapsed(elapsed)}</Text>
             </View>
           )}
+          {workoutMode !== 'daily' && (
+            <View style={styles.modePill}>
+              <Text style={styles.modePillText}>
+                {isTestMode ? 'TEST ME' : `DUEL ${duelTarget}s`}
+              </Text>
+            </View>
+          )}
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
             <Text style={styles.closeTxt}>✕</Text>
           </TouchableOpacity>
@@ -1072,12 +1098,21 @@ export default function WorkoutScreen() {
             </View>
           ) : (
             <>
-              <RepCounter count={reps} target={TARGET} />
-              <View style={styles.dots}>
-                {Array.from({ length: TARGET }).map((_, i) => (
-                  <View key={i} style={[styles.dot, i < reps && styles.dotFilled]} />
-                ))}
-              </View>
+              <RepCounter count={reps} target={targetReps} />
+              {isTestMode ? (
+                <View style={styles.testProgress}>
+                  <View style={styles.testTrack}>
+                    <View style={[styles.testFill, { width: `${Math.min((reps / targetReps) * 100, 100)}%` }]} />
+                  </View>
+                  <Text style={styles.testHint}>Monthly test keeps counting until you tap finish.</Text>
+                </View>
+              ) : (
+                <View style={styles.dots}>
+                  {Array.from({ length: targetReps }).map((_, i) => (
+                    <View key={i} style={[styles.dot, i < reps && styles.dotFilled]} />
+                  ))}
+                </View>
+              )}
               {workoutActive && repTimestamps.length >= 2 && (
                 <PaceGraph timestamps={repTimestamps} />
               )}
@@ -1098,6 +1133,16 @@ export default function WorkoutScreen() {
                     <Text style={styles.adjustBtnText}>+ rep</Text>
                   </TouchableOpacity>
                 </View>
+              )}
+              {workoutActive && isTestMode && (
+                <TouchableOpacity
+                  onPress={handleFinish}
+                  style={[styles.finishTestBtn, reps === 0 && styles.finishTestBtnDisabled]}
+                  activeOpacity={0.8}
+                  disabled={reps === 0}
+                >
+                  <Text style={styles.finishTestText}>finish monthly test →</Text>
+                </TouchableOpacity>
               )}
               {manualAdjustments !== 0 && (
                 <Text style={styles.manualNote}>
@@ -1198,6 +1243,21 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     letterSpacing: 0.5,
     fontVariant: ['tabular-nums'],
+  },
+  modePill: {
+    position: 'absolute',
+    left: spacing.lg,
+    top: spacing.xl + spacing.md,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,107,53,0.88)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  modePillText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
   },
   closeBtn: { position: 'absolute', right: spacing.lg, top: spacing.md, padding: spacing.sm },
   closeTxt: { fontSize: 18, color: 'rgba(255,255,255,0.5)' },
@@ -1329,6 +1389,29 @@ const styles = StyleSheet.create({
   },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.3)' },
   dotFilled: { backgroundColor: colors.success },
+  testProgress: {
+    width: '100%',
+    gap: spacing.xs,
+    alignItems: 'center',
+  },
+  testTrack: {
+    width: '100%',
+    height: 12,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    overflow: 'hidden',
+  },
+  testFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.streak,
+  },
+  testHint: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   adjustRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1347,6 +1430,21 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: fontSize.sm,
     fontWeight: '900',
+  },
+  finishTestBtn: {
+    borderRadius: radius.full,
+    backgroundColor: colors.streak,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+  },
+  finishTestBtnDisabled: {
+    opacity: 0.45,
+  },
+  finishTestText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   manualNote: {
     color: 'rgba(255,255,255,0.52)',
