@@ -52,6 +52,16 @@ export async function initDb(): Promise<void> {
     );
 
     INSERT OR IGNORE INTO coins (id, balance, total_earned) VALUES (1, 0, 0);
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scheduled_nudges (
+      date TEXT NOT NULL,
+      fire_at INTEGER NOT NULL
+    );
   `);
 
   // Migrations for existing installs
@@ -442,4 +452,51 @@ export async function markChestClaimed(amount: number): Promise<void> {
     'UPDATE coins SET balance = balance + ?, total_earned = total_earned + ?, last_chest_date = ? WHERE id = 1',
     [amount, amount, localDayKey()]
   );
+}
+
+// ─── App settings ─────────────────────────────────────────────────────────────
+
+export async function getSetting(key: string): Promise<string | null> {
+  if (!db) return null;
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    [key]
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  if (!db) return;
+  await db.runAsync(
+    'INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    [key, value]
+  );
+}
+
+// ─── Nudge schedule ───────────────────────────────────────────────────────────
+
+export async function saveNudgeSchedule(fireTimes: Date[]): Promise<void> {
+  if (!db) return;
+  const today = localDayKey();
+  await db.withTransactionAsync(async () => {
+    await db!.runAsync('DELETE FROM scheduled_nudges WHERE date = ?', [today]);
+    for (const t of fireTimes) {
+      await db!.runAsync(
+        'INSERT INTO scheduled_nudges (date, fire_at) VALUES (?, ?)',
+        [today, t.getTime()]
+      );
+    }
+  });
+}
+
+export async function getLastFiredNudge(): Promise<number | null> {
+  if (!db) return null;
+  const today = localDayKey();
+  const now = Date.now();
+  const tenMinutesAgo = now - 10 * 60 * 1000;
+  const row = await db.getFirstAsync<{ fire_at: number }>(
+    'SELECT fire_at FROM scheduled_nudges WHERE date = ? AND fire_at <= ? AND fire_at >= ? ORDER BY fire_at DESC LIMIT 1',
+    [today, now, tenMinutesAgo]
+  );
+  return row?.fire_at ?? null;
 }

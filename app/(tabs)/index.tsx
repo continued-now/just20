@@ -2,9 +2,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Mascot, getMoodFromContext } from '../../components/Mascot';
+import { Mascot, getMoodFromContext, getTierInfo } from '../../components/Mascot';
 import { StreakBadge } from '../../components/StreakBadge';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
+import { useCountdown } from '../../hooks/useCountdown';
 import { useNudges } from '../../hooks/useNudges';
 import { useStreak } from '../../hooks/useStreak';
 import { getStreakRepairStatus, getCoins } from '../../lib/db';
@@ -16,6 +17,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const streak = useStreak();
   const nudges = useNudges();
+  const { remainingMs, refreshWindow } = useCountdown();
   const repairChecked = useRef(false);
 
   const [chestReady, setChestReady] = useState(false);
@@ -26,6 +28,7 @@ export default function HomeScreen() {
     useCallback(() => {
       streak.refresh();
       nudges.refresh();
+      refreshWindow();
 
       // Run all side-checks in parallel
       Promise.all([
@@ -50,6 +53,16 @@ export default function HomeScreen() {
   );
 
   const mood = getMoodFromContext(nudges.remaining, streak.completedToday);
+  const tierInfo = getTierInfo(streak.current);
+
+  function formatCountdown(ms: number) {
+    const totalSec = Math.ceil(ms / 1000);
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  const showCountdown = remainingMs > 0 && !streak.completedToday;
 
   function statusText() {
     if (streak.completedToday) return "You did it! Rest up. 🎉";
@@ -87,10 +100,29 @@ export default function HomeScreen() {
           )}
 
           <View style={styles.mascotWrap}>
-            <Mascot mood={mood} size={150} />
+            <Mascot mood={mood} streak={streak.current} size={150} />
           </View>
 
+          {streak.current > 0 && (
+            <Text style={styles.tierTeaser}>
+              {tierInfo.form} {tierInfo.label}
+              {tierInfo.daysToNext !== null ? `  ·  ${tierInfo.daysToNext}d to next` : ''}
+            </Text>
+          )}
+
           <Text style={styles.status}>{statusText()}</Text>
+
+          {showCountdown && (
+            <TouchableOpacity
+              style={styles.countdownBanner}
+              onPress={() => router.push('/workout')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.countdownLabel}>DO IT NOW</Text>
+              <Text style={styles.countdownTimer}>{formatCountdown(remainingMs)}</Text>
+              <Text style={styles.countdownSub}>left in your window</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Social proof strip */}
           {buddySocialText && (
@@ -181,6 +213,14 @@ const styles = StyleSheet.create({
   mascotWrap: {
     marginVertical: spacing.md,
   },
+  tierTeaser: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.subtext,
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    marginTop: -spacing.sm,
+  },
   status: {
     fontSize: fontSize.md,
     color: colors.subtext,
@@ -198,6 +238,34 @@ const styles = StyleSheet.create({
     color: colors.subtext,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  countdownBanner: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    gap: 2,
+  },
+  countdownLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+    opacity: 0.85,
+  },
+  countdownTimer: {
+    fontSize: 48,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: -2,
+    lineHeight: 52,
+  },
+  countdownSub: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    opacity: 0.75,
   },
   chestCta: {
     backgroundColor: '#FFF8DC',

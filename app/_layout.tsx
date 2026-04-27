@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { initDb, getStreak, isCompletedToday } from '../lib/db';
 import {
@@ -12,31 +13,41 @@ import { getOrCreateUser } from '../lib/user';
 
 export default function RootLayout() {
   const router = useRouter();
+  const [ready, setReady] = useState(false);
+  const redirectTo = useRef<string | null>(null);
 
   useEffect(() => {
     async function init() {
       await initDb();
       setupNotificationHandler();
 
-      // New users see onboarding; existing users without username see profile-setup
       const user = await getOrCreateUser();
       if (!user.onboardingComplete) {
-        setTimeout(() => router.replace('/onboarding'), 0);
-      } else if (!user.username) {
-        setTimeout(() => router.replace('/profile-setup'), 0);
+        redirectTo.current = '/onboarding';
       }
 
-      const granted = await requestPermission();
-      if (granted) {
+      setReady(true);
+
+      // Notifications are non-blocking — schedule after UI is ready
+      requestPermission().then(async granted => {
+        if (!granted) return;
         await scheduleNudges();
         const [s, done] = await Promise.all([getStreak(), isCompletedToday()]);
-        if (s.current > 0 && !done) {
-          await scheduleStreakAtRiskNotification(s.current);
-        }
-      }
+        if (s.current > 0 && !done) await scheduleStreakAtRiskNotification(s.current);
+      });
     }
     init();
   }, []);
+
+  useEffect(() => {
+    if (ready && redirectTo.current) {
+      router.replace(redirectTo.current as any);
+    }
+  }, [ready]);
+
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: '#F5F5F0' }} />;
+  }
 
   return (
     <>

@@ -3,97 +3,127 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
-  Share,
+  Keyboard,
+  KeyboardAvoidingView,
+  PanResponder,
+  Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { requestPermission } from '../lib/notifications';
-import { getOrCreateUser, markOnboardingComplete } from '../lib/user';
+import { getOrCreateUser, markOnboardingComplete, updateUsername } from '../lib/user';
 
 const { width } = Dimensions.get('window');
 const TOTAL_STEPS = 5;
 
+// Bounces in on mount — each step re-mounts the mascot so the spring fires every time
+function MascotBounce({ emoji }: { emoji: string }) {
+  const scale = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, tension: 130, friction: 7, useNativeDriver: true }).start();
+  }, []);
+  return <Animated.Text style={[styles.mascot, { transform: [{ scale }] }]}>{emoji}</Animated.Text>;
+}
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState(0);
-  const [inviteCode, setInviteCode] = useState('');
+  const [username, setUsername] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
-  useEffect(() => {
-    getOrCreateUser().then(u => setInviteCode(u.inviteCode));
-  }, []);
+  // Refs so PanResponder closure always reads latest values without re-creation
+  const stepRef = useRef(0);
+  const goToStepRef = useRef<(n: number) => void>(() => {});
 
   function goToStep(next: number) {
+    Keyboard.dismiss();
+    stepRef.current = next;
     Animated.sequence([
-      Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(fadeAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
-    setTimeout(() => setStep(next), 180);
+    setTimeout(() => setStep(next), 160);
   }
+  goToStepRef.current = goToStep;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        Math.abs(gs.dx) > 12 && Math.abs(gs.dx) > Math.abs(gs.dy) * 1.5,
+      onPanResponderRelease: (_, gs) => {
+        const s = stepRef.current;
+        if (gs.dx < -50 && s < TOTAL_STEPS - 1) goToStepRef.current(s + 1);
+        if (gs.dx > 50 && s > 0) goToStepRef.current(s - 1);
+      },
+    })
+  ).current;
 
   async function finish() {
+    if (username.trim()) await updateUsername(username.trim());
     await markOnboardingComplete();
-    const user = await getOrCreateUser();
-    if (!user.username) {
-      router.replace('/profile-setup');
-    } else {
-      router.replace('/');
-    }
+    router.replace('/');
   }
 
-  async function handleNotificationStep() {
+  async function handleAllow() {
     await requestPermission();
     await finish();
   }
 
-  async function handleShareCode() {
-    const text = `Just do 20 pushups. Every day. Join me on Just20!\n\nAdd me with code: ${inviteCode}\n\n#just20 #fitness`;
-    try { await Share.share({ message: text }); } catch { /* dismissed */ }
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.topBar}>
-        {step > 0 ? (
-          <TouchableOpacity style={styles.backBtn} onPress={() => goToStep(step - 1)} activeOpacity={0.7}>
-            <Text style={styles.backBtnText}>← Back</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.backBtn} />
-        )}
-      </View>
+      <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* Top bar: back + step counter */}
+        <View style={styles.topBar}>
+          {step > 0 ? (
+            <TouchableOpacity onPress={() => goToStep(step - 1)} activeOpacity={0.7} style={styles.backBtn}>
+              <Text style={styles.backText}>← Back</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.backBtn} />
+          )}
+          <Text style={styles.counter}>{step + 1} / {TOTAL_STEPS}</Text>
+        </View>
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {step === 0 && <Step0 onNext={() => goToStep(1)} />}
-        {step === 1 && <Step1 onNext={() => goToStep(2)} />}
-        {step === 2 && <Step2 onNext={() => goToStep(3)} />}
-        {step === 3 && <Step3 inviteCode={inviteCode} onShare={handleShareCode} onNext={() => goToStep(4)} />}
-        {step === 4 && <Step4 onAllow={handleNotificationStep} onSkip={finish} />}
-      </Animated.View>
+        {/* Step content */}
+        <Animated.View style={[styles.content, { opacity: fadeAnim }]} {...panResponder.panHandlers}>
+          {step === 0 && <Step0 onNext={() => goToStep(1)} />}
+          {step === 1 && (
+            <Step1
+              username={username}
+              onChangeUsername={setUsername}
+              onNext={() => goToStep(2)}
+            />
+          )}
+          {step === 2 && <Step2 onNext={() => goToStep(3)} />}
+          {step === 3 && <Step3 onNext={() => goToStep(4)} />}
+          {step === 4 && <Step4 onAllow={handleAllow} onSkip={finish} />}
+        </Animated.View>
 
-      {/* Step dots */}
-      <View style={styles.dots}>
-        {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-          <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
-        ))}
-      </View>
+        {/* Dots */}
+        <View style={styles.dots}>
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => (
+            <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
+          ))}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
+// ─── Steps ────────────────────────────────────────────────────────────────────
+
 function Step0({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
-      <Text style={styles.mascot}>🥚</Text>
+      <MascotBounce emoji="🥚" />
       <Text style={styles.headline}>just20</Text>
       <Text style={styles.subheadline}>20 pushups.{'\n'}Every day.{'\n'}No excuses.</Text>
-      <Text style={styles.body}>
-        The simplest fitness habit alive. No equipment, no gym, no gear. Just you and the floor.
-      </Text>
+      <Text style={styles.body}>No equipment. No gym. Just you and the floor.</Text>
       <TouchableOpacity style={styles.btn} onPress={onNext}>
         <Text style={styles.btnText}>LET'S GO →</Text>
       </TouchableOpacity>
@@ -101,29 +131,56 @@ function Step0({ onNext }: { onNext: () => void }) {
   );
 }
 
-function Step1({ onNext }: { onNext: () => void }) {
+function Step1({
+  username,
+  onChangeUsername,
+  onNext,
+}: {
+  username: string;
+  onChangeUsername: (s: string) => void;
+  onNext: () => void;
+}) {
+  return (
+    <View style={styles.step}>
+      <MascotBounce emoji="💪" />
+      <Text style={styles.headline}>What do your{'\n'}friends call you?</Text>
+      <Text style={styles.body}>Shows up on your squad's leaderboard. Optional.</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="e.g. Constant"
+        placeholderTextColor={colors.subtext}
+        value={username}
+        onChangeText={onChangeUsername}
+        maxLength={20}
+        autoCapitalize="words"
+        returnKeyType="done"
+        onSubmitEditing={onNext}
+      />
+      <TouchableOpacity style={styles.btn} onPress={onNext}>
+        <Text style={styles.btnText}>{username.trim() ? 'LOOKS GOOD →' : 'SKIP →'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function Step2({ onNext }: { onNext: () => void }) {
   const today = new Date();
   const miniCal = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (6 - i));
-    const done = i < 5; // show 5 completed days for demo
-    const isToday = i === 6;
     return {
       label: d.toLocaleDateString('en-US', { weekday: 'short' }),
-      done,
-      isToday,
+      done: i < 5,
+      isToday: i === 6,
     };
   });
 
   return (
     <View style={styles.step}>
-      <Text style={styles.mascot}>🔥</Text>
+      <MascotBounce emoji="🔥" />
       <Text style={styles.headline}>Show up every day.</Text>
-      <Text style={styles.body}>
-        Miss a day, your streak resets. But miss by one? Your freeze token kicks in automatically — you get a free pass.
-      </Text>
+      <Text style={styles.body}>Miss a day, the streak resets. Miss by one? Your freeze token kicks in.</Text>
 
-      {/* Mini calendar demo */}
       <View style={styles.calDemo}>
         {miniCal.map((d, i) => (
           <View key={i} style={styles.calCol}>
@@ -135,9 +192,9 @@ function Step1({ onNext }: { onNext: () => void }) {
         ))}
       </View>
 
-      <View style={styles.freezeNote}>
-        <Text style={styles.freezeIcon}>🧊</Text>
-        <Text style={styles.freezeText}>Every 7-day streak earns you a freeze token. Use it wisely.</Text>
+      <View style={styles.noteRow}>
+        <Text style={styles.noteEmoji}>🧊</Text>
+        <Text style={styles.noteText}>Every 7-day streak earns a freeze token. Use it wisely.</Text>
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={onNext}>
@@ -147,37 +204,35 @@ function Step1({ onNext }: { onNext: () => void }) {
   );
 }
 
-function Step2({ onNext }: { onNext: () => void }) {
+function Step3({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
-      <Text style={styles.mascot}>⚡</Text>
+      <MascotBounce emoji="⚡" />
       <Text style={styles.headline}>One shot to get it done.</Text>
-      <Text style={styles.body}>
-        We send random windows throughout the day. When your window hits, you've got 5 minutes. Drop and give us 20 — anywhere, any time.
-      </Text>
+      <Text style={styles.body}>Random windows throughout the day. When one hits — drop and give 20. Anywhere.</Text>
 
       <View style={styles.mechCard}>
         <View style={styles.mechRow}>
-          <View style={styles.mechIcon}><Text style={styles.mechEmoji}>🎲</Text></View>
+          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>🎲</Text></View>
           <View style={styles.mechTextWrap}>
             <Text style={styles.mechTitle}>Random times</Text>
-            <Text style={styles.mechSub}>You can't predict when. Neither can we, really.</Text>
+            <Text style={styles.mechSub}>Different every day. No predicting it, no gaming it.</Text>
           </View>
         </View>
         <View style={styles.mechDivider} />
         <View style={styles.mechRow}>
-          <View style={styles.mechIcon}><Text style={styles.mechEmoji}>⏱</Text></View>
+          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>✅</Text></View>
           <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>5-minute window</Text>
-            <Text style={styles.mechSub}>Get the notification. Do 20. Done for the day.</Text>
+            <Text style={styles.mechTitle}>Get it out of the way</Text>
+            <Text style={styles.mechSub}>Notification hits? That's your cue. Do it and you're done.</Text>
           </View>
         </View>
         <View style={styles.mechDivider} />
         <View style={styles.mechRow}>
-          <View style={styles.mechIcon}><Text style={styles.mechEmoji}>📍</Text></View>
+          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>📍</Text></View>
           <View style={styles.mechTextWrap}>
             <Text style={styles.mechTitle}>Anywhere</Text>
-            <Text style={styles.mechSub}>Floor. Office. Kitchen. No excuses accepted.</Text>
+            <Text style={styles.mechSub}>Floor. Office. Kitchen. Zero equipment needed.</Text>
           </View>
         </View>
       </View>
@@ -189,67 +244,33 @@ function Step2({ onNext }: { onNext: () => void }) {
   );
 }
 
-function Step3({
-  inviteCode,
-  onShare,
-  onNext,
-}: {
-  inviteCode: string;
-  onShare: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <View style={styles.step}>
-      <Text style={styles.mascot}>💪</Text>
-      <Text style={styles.headline}>Accountability is everything.</Text>
-      <Text style={styles.body}>
-        Add a buddy. When they know you're watching, you both show up. This is your code — share it.
-      </Text>
-
-      <View style={styles.codeCard}>
-        <Text style={styles.codeLabel}>YOUR CODE</Text>
-        <Text style={styles.codeValue}>{inviteCode || 'JUST-XXXXXX'}</Text>
-      </View>
-
-      <TouchableOpacity style={styles.btn} onPress={onShare}>
-        <Text style={styles.btnText}>SHARE CODE →</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={onNext} style={styles.skipBtn}>
-        <Text style={styles.skipText}>skip for now</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 function Step4({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void }) {
   return (
     <View style={styles.step}>
-      <Text style={styles.mascot}>😤</Text>
+      <MascotBounce emoji="😤" />
       <Text style={styles.headline}>We will annoy you.</Text>
-      <Text style={styles.body}>
-        Up to 20 push notifications a day, escalating in aggression until you do your pushups. This is how the streak lives.
-      </Text>
+      <Text style={styles.body}>Up to 20 notifications a day, getting angrier until you do it.</Text>
 
       <View style={styles.notifPreview}>
         <View style={styles.notifRow}>
           <Text style={styles.notifIcon}>🙄</Text>
           <Text style={styles.notifMsg}>gentle reminder: the floor is waiting.</Text>
         </View>
+        <View style={styles.notifDivider} />
         <View style={styles.notifRow}>
           <Text style={styles.notifIcon}>😤</Text>
           <Text style={styles.notifMsg}>DO THE PUSHUPS. i'm not asking.</Text>
         </View>
+        <View style={styles.notifDivider} />
         <View style={styles.notifRow}>
           <Text style={styles.notifIcon}>💢</Text>
-          <Text style={styles.notifMsg}>FINAL WARNING. 20 PUSHUPS. DO IT.</Text>
+          <Text style={styles.notifMsg}>FINAL WARNING. DO IT OR FACE SHAME.</Text>
         </View>
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={onAllow}>
         <Text style={styles.btnText}>ALLOW NOTIFICATIONS →</Text>
       </TouchableOpacity>
-
       <TouchableOpacity onPress={onSkip} style={styles.skipBtn}>
         <Text style={styles.skipText}>skip (not recommended)</Text>
       </TouchableOpacity>
@@ -257,32 +278,26 @@ function Step4({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void })
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
+  safe: { flex: 1, backgroundColor: colors.bg },
+  kav: { flex: 1 },
+
   topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.xs,
-    minHeight: 44,
-    justifyContent: 'center',
   },
-  backBtn: {
-    alignSelf: 'flex-start',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-  },
-  backBtnText: {
-    fontSize: fontSize.md,
-    fontWeight: '700',
-    color: colors.subtext,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-  },
+  backBtn: { minWidth: 64 },
+  backText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.subtext },
+  counter: { fontSize: fontSize.sm, fontWeight: '700', color: colors.subtext },
+
+  content: { flex: 1, justifyContent: 'center' },
+
   step: {
     paddingHorizontal: spacing.xl,
     gap: spacing.lg,
@@ -310,6 +325,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     fontWeight: '500',
+    marginTop: -spacing.xs,
+  },
+
+  // Username input (Step 1)
+  input: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+    textAlign: 'center',
   },
 
   btn: {
@@ -319,7 +350,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     minWidth: width * 0.7,
     alignItems: 'center',
-    marginTop: spacing.xs,
   },
   btnText: {
     color: colors.bg,
@@ -327,9 +357,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  skipBtn: {
-    paddingVertical: spacing.sm,
-  },
+  skipBtn: { paddingVertical: spacing.sm },
   skipText: {
     fontSize: fontSize.sm,
     color: colors.subtext,
@@ -337,7 +365,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // Mini calendar (Step 1)
+  // Mini calendar (Step 2)
   calDemo: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -364,7 +392,7 @@ const styles = StyleSheet.create({
   calLabel: { fontSize: 10, color: colors.subtext, fontWeight: '600' },
   calLabelToday: { color: colors.streak, fontWeight: '800' },
 
-  freezeNote: {
+  noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
@@ -375,16 +403,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignSelf: 'stretch',
   },
-  freezeIcon: { fontSize: 20 },
-  freezeText: { flex: 1, fontSize: fontSize.sm, color: colors.subtext, fontWeight: '500', lineHeight: 18 },
+  noteEmoji: { fontSize: 20 },
+  noteText: { flex: 1, fontSize: fontSize.sm, color: colors.subtext, fontWeight: '500', lineHeight: 18 },
 
-  // Mechanic card (Step 2)
+  // Mechanic card (Step 3)
   mechCard: {
     alignSelf: 'stretch',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    gap: 0,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -394,7 +421,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: spacing.md,
   },
-  mechIcon: {
+  mechIconBox: {
     width: 40,
     height: 40,
     borderRadius: radius.md,
@@ -408,40 +435,14 @@ const styles = StyleSheet.create({
   mechTextWrap: { flex: 1, gap: 2 },
   mechTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.text },
   mechSub: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '500', lineHeight: 16 },
-  mechDivider: { height: 1, backgroundColor: colors.border },
+  mechDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: -spacing.lg },
 
-  // Invite code (Step 3)
-  codeCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.xs,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignSelf: 'stretch',
-  },
-  codeLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    color: colors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  codeValue: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: colors.text,
-    letterSpacing: 2,
-  },
-
-  // Notification preview (Step 3)
+  // Notification preview (Step 4)
   notifPreview: {
     alignSelf: 'stretch',
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.md,
-    gap: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -449,14 +450,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
+  notifDivider: { height: 1, backgroundColor: colors.border },
   notifIcon: { fontSize: 20 },
-  notifMsg: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontWeight: '500',
-  },
+  notifMsg: { flex: 1, fontSize: fontSize.sm, color: colors.text, fontWeight: '500' },
 
   // Step dots
   dots: {
@@ -464,15 +462,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingBottom: spacing.xl,
+    paddingTop: spacing.sm,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.border,
-  },
-  dotActive: {
-    backgroundColor: colors.text,
-    width: 20,
-  },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
+  dotActive: { backgroundColor: colors.text, width: 20, borderRadius: 4 },
 });

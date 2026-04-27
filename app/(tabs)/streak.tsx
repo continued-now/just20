@@ -6,6 +6,7 @@ import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { getCalendarData, getStreak } from '../../lib/db';
 import { localDayKey } from '../../lib/dates';
 import { getNextMilestone, MILESTONE_DAYS } from '../../lib/milestones';
+import { STREAK_TIERS, getTierInfo } from '../../components/Mascot';
 
 type StreakData = {
   current: number;
@@ -96,6 +97,37 @@ export default function StreakScreen() {
             <Text style={styles.legendText}>You've hit every milestone. Actual legend.</Text>
           </View>
         )}
+
+        {/* Evolution Path */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Evolution Path</Text>
+          <View style={styles.evoList}>
+            {[...STREAK_TIERS].reverse().map((tier) => {
+              const reached = current >= tier.minDays;
+              const isCurrent = getTierInfo(current).minDays === tier.minDays;
+              return (
+                <View key={tier.minDays} style={[styles.evoRow, isCurrent && styles.evoRowCurrent]}>
+                  <Text style={styles.evoForm}>{tier.form}</Text>
+                  <View style={styles.evoMeta}>
+                    <Text style={[styles.evoLabel, reached && styles.evoLabelReached]}>
+                      {tier.label}
+                    </Text>
+                    <Text style={styles.evoSub}>
+                      {tier.minDays === 0 ? 'Day 0' : `Day ${tier.minDays}`}
+                      {isCurrent ? '  ← you' : ''}
+                    </Text>
+                  </View>
+                  {reached && <Text style={styles.evoCheck}>✓</Text>}
+                </View>
+              );
+            })}
+          </View>
+          {getTierInfo(current).daysToNext !== null && (
+            <Text style={styles.evoNext}>
+              {getTierInfo(current).daysToNext} day{getTierInfo(current).daysToNext !== 1 ? 's' : ''} to next form
+            </Text>
+          )}
+        </View>
 
         {/* Last 7 days */}
         <View style={styles.card}>
@@ -351,5 +383,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.streak,
     fontWeight: '800',
+  },
+
+  // Evolution path
+  evoList: { gap: spacing.xs },
+  evoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+  },
+  evoRowCurrent: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  evoForm: { fontSize: 26, width: 40, textAlign: 'center' },
+  evoMeta: { flex: 1, gap: 1 },
+  evoLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.subtext },
+  evoLabelReached: { color: colors.text },
+  evoSub: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '500' },
+  evoCheck: { fontSize: 13, color: colors.streak, fontWeight: '800' },
+  evoNext: {
+    fontSize: fontSize.xs,
+    color: colors.subtext,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 });

@@ -1,4 +1,5 @@
 import * as Notifications from 'expo-notifications';
+import { saveNudgeSchedule } from './db';
 
 const START_HOUR = 7;
 const END_HOUR = 22;
@@ -88,6 +89,8 @@ export async function scheduleNudges(): Promise<void> {
   }
   times.sort((a, b) => a.getTime() - b.getTime());
 
+  await saveNudgeSchedule(times);
+
   for (let i = 0; i < times.length; i++) {
     const remaining = times.length - i;
     const t = tier(remaining);
@@ -104,6 +107,32 @@ export async function scheduleNudges(): Promise<void> {
       },
     });
   }
+}
+
+const SCHEDULED_WINDOW_ID = 'scheduled-window';
+const SCHEDULED_WINDOW_TYPE = 'scheduled-window';
+
+export async function scheduleWindowedNotification(hour: number): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync(SCHEDULED_WINDOW_ID).catch(() => {});
+  await Notifications.scheduleNotificationAsync({
+    identifier: SCHEDULED_WINDOW_ID,
+    content: {
+      title: 'just20 ⚡',
+      body: "Your window is open. Drop and give 20. 10 minutes on the clock.",
+      sound: 'default',
+      data: { type: SCHEDULED_WINDOW_TYPE },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+      hour,
+      minute: 0,
+      repeats: true,
+    } as any,
+  });
+}
+
+export async function cancelWindowedNotification(): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync(SCHEDULED_WINDOW_ID).catch(() => {});
 }
 
 export async function cancelAllNudges(): Promise<void> {

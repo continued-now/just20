@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,6 +18,7 @@ import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { getStreak, getBestCompletedTime, getCompletedSetsToday, getUserSeed } from '../lib/db';
 import { awardWorkoutCoins } from '../lib/coins';
 import { syncCompletionToCloud } from '../lib/social';
+import { getOrCreateUser } from '../lib/user';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
@@ -42,6 +44,8 @@ export default function CompletionScreen() {
   const [setsToday, setSetsToday] = useState(1);
   const [dailyQuote, setDailyQuote] = useState('');
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
+  const [totalSessions, setTotalSessions] = useState(0);
+  const [inviteCode, setInviteCode] = useState('');
 
   // Hold the card for 2s before revealing buttons
   useEffect(() => {
@@ -49,17 +53,20 @@ export default function CompletionScreen() {
     return () => clearTimeout(t);
   }, []);
 
-  // Streak + personal best + sets today
+  // Streak + personal best + sets today + user profile
   useEffect(() => {
     (async () => {
-      const [s, best, sets, seed] = await Promise.all([
+      const [s, best, sets, seed, user] = await Promise.all([
         getStreak(),
         getBestCompletedTime(),
         getCompletedSetsToday(),
         getUserSeed(),
+        getOrCreateUser(),
       ]);
       setStreak(s.current);
       setSetsToday(sets);
+      setTotalSessions(s.totalSessions);
+      setInviteCode(user.inviteCode);
       setDailyQuote(getDailyQuote(seed));
       if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
         setIsPB(true);
@@ -106,6 +113,11 @@ export default function CompletionScreen() {
     } catch (_) {
       setLocationStatus('error');
     }
+  }
+
+  async function handleShareInvite() {
+    const text = `I just did 20 pushups with Just20 🔥\n\nJoin me — add me with code: ${inviteCode}\n\n#just20 #fitness`;
+    try { await Share.share({ message: text }); } catch { /* dismissed */ }
   }
 
   async function handleInstagramShare() {
@@ -227,6 +239,15 @@ export default function CompletionScreen() {
             >
               <Text style={styles.doAnotherBtnText}>Do another set 🔥</Text>
             </TouchableOpacity>
+            {totalSessions === 1 && inviteCode ? (
+              <View style={styles.inviteBanner}>
+                <Text style={styles.inviteLabel}>Bring a friend</Text>
+                <Text style={styles.inviteCode}>{inviteCode}</Text>
+                <TouchableOpacity onPress={handleShareInvite} activeOpacity={0.8}>
+                  <Text style={styles.inviteShareText}>Share your code →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <TouchableOpacity onPress={() => router.replace('/')} activeOpacity={0.6}>
               <Text style={styles.skipText}>skip →</Text>
             </TouchableOpacity>
@@ -417,5 +438,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xl,
+  },
+  inviteBanner: {
+    width: '100%',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: 4,
+  },
+  inviteLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.4)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  inviteCode: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 2,
+  },
+  inviteShareText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.streak,
+    marginTop: 2,
   },
 });
