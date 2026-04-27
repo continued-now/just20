@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { repairStreak } from '../lib/db';
+import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 
 export default function StreakRepairScreen() {
   const { prevStreak } = useLocalSearchParams<{ prevStreak: string }>();
@@ -11,6 +12,7 @@ export default function StreakRepairScreen() {
 
   async function handleRepair() {
     await repairStreak();
+    scheduleSharedJust20StatusUpdate();
     router.replace('/');
   }
 

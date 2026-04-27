@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
-import { getSetting, setSetting } from '../../lib/db';
+import { getBooleanSetting, getSetting, setBooleanSetting, setSetting } from '../../lib/db';
 import {
   DEFAULT_NOTIFICATION_MODE,
   DEFAULT_SCHEDULED_HOUR,
@@ -16,6 +16,7 @@ import {
   scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
 } from '../../lib/notifications';
+import { scheduleSharedJust20StatusUpdate } from '../../lib/widgetStatus';
 
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 6); // 6am–9pm
 function formatHour(h: number) {
@@ -34,19 +35,28 @@ export default function SettingsScreen() {
   const [notificationsOn, setNotificationsOn] = useState(false);
   const [mode, setMode] = useState<NotificationMode>(DEFAULT_NOTIFICATION_MODE);
   const [scheduledHour, setScheduledHour] = useState(DEFAULT_SCHEDULED_HOUR);
+  const [widgetUrgency, setWidgetUrgency] = useState(true);
+  const [watchNudges, setWatchNudges] = useState(true);
+  const [lockInMode, setLockInMode] = useState(false);
 
   useEffect(() => {
     async function load() {
-      const [nudgeCount, scheduledActive, savedMode, savedHour] = await Promise.all([
+      const [nudgeCount, scheduledActive, savedMode, savedHour, savedWidgetUrgency, savedWatchNudges, savedLockIn] = await Promise.all([
         getRemainingNudgeCount(),
         hasScheduledWindowNotification(),
         getSetting('notification_mode'),
         getSetting('scheduled_hour'),
+        getBooleanSetting('widget_urgency_enabled', true),
+        getBooleanSetting('watch_nudges_enabled', true),
+        getBooleanSetting('lock_in_mode_enabled', false),
       ]);
       const initialMode = normalizeMode(savedMode);
       setMode(initialMode);
       setNotificationsOn(initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0);
       if (savedHour) setScheduledHour(parseInt(savedHour, 10));
+      setWidgetUrgency(savedWidgetUrgency);
+      setWatchNudges(savedWatchNudges);
+      setLockInMode(savedLockIn);
     }
     load();
   }, []);
@@ -89,6 +99,7 @@ export default function SettingsScreen() {
     setMode(next);
     await setSetting('notification_mode', next);
     await enableMode(next);
+    scheduleSharedJust20StatusUpdate();
   }
 
   async function handleHourChange(h: number) {
@@ -96,6 +107,7 @@ export default function SettingsScreen() {
     await setSetting('scheduled_hour', String(h));
     if (notificationsOn) {
       await enableMode(mode, h);
+      scheduleSharedJust20StatusUpdate();
     }
   }
 
@@ -110,6 +122,7 @@ export default function SettingsScreen() {
     } else {
       Alert.alert('Nudges rescheduled', '20 new nudges scheduled for today.');
     }
+    scheduleSharedJust20StatusUpdate();
   }
 
   async function handleClearNudges() {
@@ -117,6 +130,15 @@ export default function SettingsScreen() {
     await cancelWindowedNotification();
     setNotificationsOn(false);
     Alert.alert('Notifications cleared', 'All reminders cancelled.');
+    scheduleSharedJust20StatusUpdate();
+  }
+
+  async function setWidgetSetting(key: string, value: boolean) {
+    if (key === 'widget_urgency_enabled') setWidgetUrgency(value);
+    if (key === 'watch_nudges_enabled') setWatchNudges(value);
+    if (key === 'lock_in_mode_enabled') setLockInMode(value);
+    await setBooleanSetting(key, value);
+    scheduleSharedJust20StatusUpdate();
   }
 
   return (
@@ -185,6 +207,52 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Widget & Watch</Text>
+          <Text style={styles.sectionDesc}>Let your mascot bother you outside the app.</Text>
+
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Home Screen Widget urgency</Text>
+              <Text style={styles.rowSub}>Show stronger widget copy as the day gets late.</Text>
+            </View>
+            <Switch
+              value={widgetUrgency}
+              onValueChange={(v) => setWidgetSetting('widget_urgency_enabled', v)}
+              trackColor={{ true: colors.success, false: colors.border }}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Apple Watch nudges</Text>
+              <Text style={styles.rowSub}>Keep watch status and complications noisy.</Text>
+            </View>
+            <Switch
+              value={watchNudges}
+              onValueChange={(v) => setWidgetSetting('watch_nudges_enabled', v)}
+              trackColor={{ true: colors.success, false: colors.border }}
+            />
+          </View>
+
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Lock-in Mode</Text>
+              <Text style={styles.rowSub}>Opt into the more aggressive late-day widget/watch tone.</Text>
+            </View>
+            <Switch
+              value={lockInMode}
+              onValueChange={(v) => setWidgetSetting('lock_in_mode_enabled', v)}
+              trackColor={{ true: colors.streak, false: colors.border }}
+            />
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.rowLabel}>Quiet hours</Text>
+            <Text style={styles.rowSub}>10pm–7am</Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
 
           <View style={styles.row}>
@@ -208,6 +276,7 @@ export default function SettingsScreen() {
                   await cancelAllNudges();
                   await cancelWindowedNotification();
                 }
+                scheduleSharedJust20StatusUpdate();
               }}
               trackColor={{ true: colors.success, false: colors.border }}
             />
@@ -385,6 +454,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  rowText: { flex: 1, paddingRight: spacing.md },
   rowLabel: {
     fontSize: fontSize.md,
     fontWeight: '600',

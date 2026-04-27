@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { initDb, getSetting, getStreak, isCompletedToday, setSetting } from '../lib/db';
 import {
@@ -17,6 +17,7 @@ import {
   scheduleWindowedNotification,
 } from '../lib/notifications';
 import { getOrCreateUser } from '../lib/user';
+import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 
 function normalizeNotificationMode(value: string | null): NotificationMode {
   if (value === 'scheduled_fallback' || value === 'strict' || value === 'random') return value;
@@ -40,6 +41,7 @@ export default function RootLayout() {
       }
 
       setReady(true);
+      scheduleSharedJust20StatusUpdate();
 
       if (!user.onboardingComplete) return;
 
@@ -81,9 +83,15 @@ export default function RootLayout() {
         }
 
         if (s.current > 0) await scheduleStreakAtRiskNotification(s.current);
+        scheduleSharedJust20StatusUpdate();
       });
     }
     init();
+
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') scheduleSharedJust20StatusUpdate();
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {

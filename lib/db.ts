@@ -732,6 +732,16 @@ export async function setSetting(key: string, value: string): Promise<void> {
   );
 }
 
+export async function getBooleanSetting(key: string, fallback: boolean): Promise<boolean> {
+  const value = await getSetting(key);
+  if (value === null) return fallback;
+  return value === '1' || value === 'true';
+}
+
+export async function setBooleanSetting(key: string, value: boolean): Promise<void> {
+  await setSetting(key, value ? '1' : '0');
+}
+
 // ─── Nudge schedule ───────────────────────────────────────────────────────────
 
 export async function saveNudgeSchedule(fireTimes: Date[]): Promise<void> {
@@ -779,4 +789,14 @@ export async function getFiredNudgeCountToday(): Promise<number> {
     [localDayKey(), Date.now()]
   );
   return row?.count ?? 0;
+}
+
+export async function getNextScheduledNudge(): Promise<number | null> {
+  if (!db) return null;
+  const today = localDayKey();
+  const row = await db.getFirstAsync<{ fire_at: number }>(
+    'SELECT fire_at FROM scheduled_nudges WHERE date = ? AND fire_at > ? ORDER BY fire_at ASC LIMIT 1',
+    [today, Date.now()]
+  );
+  return row?.fire_at ?? null;
 }

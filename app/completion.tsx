@@ -25,6 +25,7 @@ import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
 import { BadgeUnlockCelebration } from '../components/BadgeUnlockCelebration';
+import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 
 const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
@@ -104,6 +105,7 @@ export default function CompletionScreen() {
         nudgesUsed: nudgeCountAtCompletion,
       });
       setBadgeRewards(unlockedBadges);
+      scheduleSharedJust20StatusUpdate();
     })();
   }, []);
 

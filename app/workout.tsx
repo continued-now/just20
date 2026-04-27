@@ -36,6 +36,7 @@ import {
   scheduleWindowedNotification,
 } from '../lib/notifications';
 import { markMonthlyTestTaken } from '../lib/viral';
+import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 
 const STANDARD_TARGET = 20;
 const TEST_TARGET = 100;
@@ -895,6 +896,7 @@ export default function WorkoutScreen() {
     await saveSession(reps, duration);
     if (isTestMode) await markMonthlyTestTaken();
     if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
+    scheduleSharedJust20StatusUpdate();
     router.replace({
       pathname: '/completion',
       params: {
@@ -930,6 +932,7 @@ export default function WorkoutScreen() {
             const duration = getWorkoutDurationMs();
             await saveSession(reps, duration);
             if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
+            scheduleSharedJust20StatusUpdate();
             router.back();
           },
         },
