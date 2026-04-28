@@ -286,6 +286,7 @@ export default function WorkoutScreen() {
   const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualAdjustments, setManualAdjustments] = useState(0);
+  const [manualAdjustmentCount, setManualAdjustmentCount] = useState(0);
   const [showCalibration, setShowCalibration] = useState(false);
   const [secondaryTrackingRequested, setSecondaryTrackingRequested] = useState(false);
   const [cameraPaused, setCameraPaused] = useState(false);
@@ -778,6 +779,7 @@ export default function WorkoutScreen() {
     setRepTimestamps([]);
     setMilestoneMsg(null);
     setManualAdjustments(0);
+    setManualAdjustmentCount(0);
     // isStarted.value set after countdown reaches 0
   }
 
@@ -846,6 +848,7 @@ export default function WorkoutScreen() {
     lastFeedbackTime.value = Date.now();
     manuallyAdjusted.value = true;
     setManualAdjustments((current) => current + delta);
+    setManualAdjustmentCount((current) => current + 1);
     setReps(next);
     setFeedback(delta > 0 ? 'Rep added' : 'Rep removed');
     if (delta < 0) {
@@ -900,6 +903,7 @@ export default function WorkoutScreen() {
         nudgesUsed: String(nudgesUsed),
         mode: workoutMode,
         duelTarget: String(duelTarget),
+        manualAdjustments: String(manualAdjustmentCount),
       },
     });
   }

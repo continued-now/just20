@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Just20 Badge Mockups</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css?v=full-badges-1">
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Just20 badge mockups">
+        <span class="brand-mark">20</span>
+        <span>Just20 Badges</span>
+      </a>
+      <nav class="nav-links" aria-label="Badge mockup sections">
+        <a href="#directions">Directions</a>
+        <a href="#unlocks">Unlocks</a>
+        <a href="#matrix">Matrix</a>
+        <a href="#cards">Share cards</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Full badge set</p>
+          <h1>Cute wins you can actually collect.</h1>
+          <p class="hero-sub">
+            Three visual systems for the planned 29-badge roadmap. The aim is soft, sticky,
+            instantly readable, and shareable without turning the app into armor-rank cosplay.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#directions">Compare the three options</a>
+            <a class="button secondary" href="#matrix">See every badge</a>
+          </div>
+        </div>
+        <aside class="phone-preview" aria-label="Mobile badge preview">
+          <div class="phone-shell">
+            <div class="phone-header">
+              <span>Badges</span>
+              <span>4/29</span>
+            </div>
+            <div class="featured-badge" id="featuredBadge"></div>
+            <div class="mini-grid" id="miniGrid"></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section" id="directions">
+        <div class="section-heading">
+          <p class="eyebrow">Pick a badge language</p>
+          <h2>Three directions, same unlock logic.</h2>
+          <p>
+            Each option uses the same XP, rarity, progress, and brag mechanics. What changes is
+            the collectible texture: digital sticker, physical pin, or club patch.
+          </p>
+        </div>
+        <div class="direction-grid" id="directionGrid"></div>
+      </section>
+
+      <section class="section unlock-section" id="unlocks">
+        <div class="section-heading compact">
+          <p class="eyebrow">Option B animation pass</p>
+          <h2>Unlock moments should feel earned, not loud.</h2>
+          <p>
+            These use the enamel-pin direction with a short reward-app pop: the badge lifts in,
+            a soft ring confirms the unlock, and small accents disappear quickly so it does not
+            feel casino-ish.
+          </p>
+        </div>
+        <div class="unlock-toolbar">
+          <div class="filter-row unlock-filter-row" role="group" aria-label="Unlock animation filters">
+            <button class="unlock-filter active" type="button" data-unlock-filter="all">All</button>
+            <button class="unlock-filter" type="button" data-unlock-filter="streak">Streak</button>
+            <button class="unlock-filter" type="button" data-unlock-filter="social">Social</button>
+            <button class="unlock-filter" type="button" data-unlock-filter="performance">Performance</button>
+            <button class="unlock-filter" type="button" data-unlock-filter="consistency">Ritual</button>
+          </div>
+          <button class="replay-all-button" type="button" id="replayAllUnlocks">Replay visible</button>
+        </div>
+        <div class="unlock-demo-grid" id="unlockDemos"></div>
+      </section>
+
+      <section class="section matrix-section" id="matrix">
+        <div class="section-heading compact">
+          <p class="eyebrow">Full set matrix</p>
+          <h2>Every badge, rendered three ways.</h2>
+          <p>
+            Hover or tap any badge for the unlock copy. Locked styling is shown on a few later
+            badges so we can see how mystery and progress would feel in the real grid.
+          </p>
+        </div>
+        <div class="filter-row" role="group" aria-label="Badge filters">
+          <button class="filter active" type="button" data-filter="all">All</button>
+          <button class="filter" type="button" data-filter="streak">Streak</button>
+          <button class="filter" type="button" data-filter="social">Social</button>
+          <button class="filter" type="button" data-filter="performance">Performance</button>
+          <button class="filter" type="button" data-filter="consistency">Ritual</button>
+        </div>
+        <div class="badge-matrix" id="badgeMatrix"></div>
+      </section>
+
+      <section class="section" id="cards">
+        <div class="section-heading compact">
+          <p class="eyebrow">Brag flow preview</p>
+          <h2>How the badges could share.</h2>
+          <p>
+            The badge itself should be cute enough to post. The card should add context: what
+            happened, why it matters, and the invite loop.
+          </p>
+        </div>
+        <div class="share-layout" id="shareCards"></div>
+      </section>
+
+      <section class="section recommendation">
+        <div>
+          <p class="eyebrow">My read</p>
+          <h2>Use Pins as the main badge system.</h2>
+          <p>
+            Option B is the strongest direction now: it makes badges feel more earned and more
+            collectible without getting intense. I would use the enamel-pin system for unlocks
+            and badge details, keep a simplified sticker treatment for tiny grid states, and
+            reserve patches for squad/social moments later.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script src="./script.js?v=full-badges-1"></script>
+  </body>
+</html>

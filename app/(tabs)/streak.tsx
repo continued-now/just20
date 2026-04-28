@@ -184,6 +184,9 @@ export default function StreakScreen() {
             <View style={styles.coinPill}>
               <Text style={styles.coinText}>🪙 {data?.coinBalance ?? 0}</Text>
             </View>
+            <TouchableOpacity style={styles.badgesPill} onPress={() => router.push('/badges' as any)} activeOpacity={0.82}>
+              <Text style={styles.badgesText}>Badges</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -521,6 +524,15 @@ const styles = StyleSheet.create({
     borderColor: '#FFD76B',
   },
   coinText: { fontSize: fontSize.sm, fontWeight: '900', color: '#9B6500' },
+  badgesPill: {
+    backgroundColor: '#FFF0E8',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#FFD2BF',
+  },
+  badgesText: { fontSize: fontSize.sm, fontWeight: '900', color: colors.streak },
 
   hero: {
     overflow: 'hidden',

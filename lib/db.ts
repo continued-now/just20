@@ -72,6 +72,19 @@ export async function initDb(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS badge_unlocks (
+      badge_id TEXT PRIMARY KEY,
+      unlocked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      xp_awarded INTEGER NOT NULL DEFAULT 0,
+      share_count INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS badge_counters (
+      key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -501,6 +514,19 @@ export type XpEvent = {
   createdAt: string;
 };
 
+export type BadgeUnlock = {
+  badgeId: string;
+  unlockedAt: string;
+  xpAwarded: number;
+  shareCount: number;
+};
+
+export type BadgeCounter = {
+  key: string;
+  count: number;
+  updatedAt: string;
+};
+
 export async function getXp(): Promise<XpData> {
   if (!db) {
     return {
@@ -580,6 +606,90 @@ export async function claimMilestoneXp(
   await addXp(amount, 'streak_milestone', metadata);
   await db.runAsync('UPDATE xp SET last_milestone_award_date = ? WHERE id = 1', [today]);
   return amount;
+}
+
+export async function awardBadgeXp(
+  amount: number,
+  metadata?: Record<string, unknown>
+): Promise<number | null> {
+  if (!db || amount <= 0) return null;
+  await addXp(amount, 'badge_unlock', metadata);
+  return amount;
+}
+
+export async function getBadgeUnlocks(): Promise<BadgeUnlock[]> {
+  if (!db) return [];
+  const rows = await db.getAllAsync<{
+    badge_id: string;
+    unlocked_at: string;
+    xp_awarded: number;
+    share_count: number;
+  }>('SELECT * FROM badge_unlocks ORDER BY unlocked_at DESC');
+
+  return rows.map(row => ({
+    badgeId: row.badge_id,
+    unlockedAt: row.unlocked_at,
+    xpAwarded: row.xp_awarded,
+    shareCount: row.share_count,
+  }));
+}
+
+export async function insertBadgeUnlock(badgeId: string, xpAwarded: number): Promise<boolean> {
+  if (!db) return false;
+  const result = await db.runAsync(
+    'INSERT OR IGNORE INTO badge_unlocks (badge_id, xp_awarded) VALUES (?, ?)',
+    [badgeId, xpAwarded]
+  );
+  return (result as { changes?: number }).changes === 1;
+}
+
+export async function incrementBadgeShareCount(badgeId: string): Promise<void> {
+  if (!db) return;
+  await db.runAsync(
+    'UPDATE badge_unlocks SET share_count = share_count + 1 WHERE badge_id = ?',
+    [badgeId]
+  );
+}
+
+export async function getBadgeCounters(): Promise<Record<string, number>> {
+  if (!db) return {};
+  const rows = await db.getAllAsync<{
+    key: string;
+    count: number;
+  }>('SELECT key, count FROM badge_counters');
+
+  return rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.key] = row.count;
+    return acc;
+  }, {});
+}
+
+export async function getBadgeCounter(key: string): Promise<number> {
+  if (!db) return 0;
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT count FROM badge_counters WHERE key = ?',
+    [key]
+  );
+  return row?.count ?? 0;
+}
+
+export async function setBadgeCounter(key: string, count: number): Promise<void> {
+  if (!db) return;
+  await db.runAsync(
+    `INSERT INTO badge_counters (key, count, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET
+       count = excluded.count,
+       updated_at = excluded.updated_at`,
+    [key, Math.max(0, count)]
+  );
+}
+
+export async function incrementBadgeCounter(key: string, by = 1): Promise<number> {
+  const current = await getBadgeCounter(key);
+  const next = current + by;
+  await setBadgeCounter(key, next);
+  return next;
 }
 
 export async function getRecentXpEvents(limit = 20): Promise<XpEvent[]> {

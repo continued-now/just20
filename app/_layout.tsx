@@ -122,6 +122,10 @@ export default function RootLayout() {
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />
         <Stack.Screen
+          name="badges"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+        <Stack.Screen
           name="streak-repair"
           options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
         />

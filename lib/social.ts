@@ -2,6 +2,7 @@ import { SUPABASE_ENABLED, supabase } from './supabase';
 import { getOrCreateUser } from './user';
 import { getBuddyLinks, getBuddyLink, addBuddyLink } from './db';
 import { localDayKey } from './dates';
+import { evaluateBadgeUnlocks } from './badges';
 
 export type BuddyStatus = {
   username: string;
@@ -57,6 +58,7 @@ export async function linkBuddy(rawCode: string): Promise<{
       if (!buddy) return { success: false, username: null, error: 'Code not found. Check and try again.' };
       await supabase.addBuddyLink(me.deviceId, code);
       await addBuddyLink(buddy.username ?? 'Anonymous', code);
+      await evaluateBadgeUnlocks({ event: 'buddy_linked', backendVerified: true });
       return { success: true, username: buddy.username };
     } catch {
       return { success: false, username: null, error: 'Connection error. Try again.' };
@@ -65,6 +67,7 @@ export async function linkBuddy(rawCode: string): Promise<{
 
   // Local mode: save optimistically — cross-device sync happens once Supabase is active
   await addBuddyLink('Friend', code);
+  await evaluateBadgeUnlocks({ event: 'buddy_linked' });
   return { success: true, username: 'Friend' };
 }
 

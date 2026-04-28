@@ -20,20 +20,23 @@ import { awardWorkoutXp, type WorkoutXpReward } from '../lib/xp';
 import { syncCompletionToCloud } from '../lib/social';
 import { buildChallengeShareText, getOrCreateUser } from '../lib/user';
 import { buildDuelShareText, buildMonthlyTestShareText } from '../lib/viral';
+import { evaluateBadgeUnlocks, type BadgeUnlockResult } from '../lib/badges';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
+import { BadgeUnlockCelebration } from '../components/BadgeUnlockCelebration';
 
 const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
-  const { reps, duration, nudgesUsed, mode, duelTarget } = useLocalSearchParams<{
+  const { reps, duration, nudgesUsed, mode, duelTarget, manualAdjustments } = useLocalSearchParams<{
     reps: string;
     duration: string;
     nudgesUsed?: string;
     mode?: string;
     duelTarget?: string;
+    manualAdjustments?: string;
   }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
@@ -42,6 +45,7 @@ export default function CompletionScreen() {
   const durationMs = parseInt(duration ?? '0', 10);
   const durationSec = Math.round(durationMs / 1000);
   const nudgeCountAtCompletion = Math.max(0, parseInt(nudgesUsed ?? '0', 10) || 0);
+  const manualAdjustmentCount = Math.max(0, parseInt(manualAdjustments ?? '0', 10) || 0);
   const workoutMode = mode === 'test' ? 'test' : mode === 'duel' ? 'duel' : 'daily';
   const isTestMode = workoutMode === 'test';
   const isDuelMode = workoutMode === 'duel';
@@ -59,6 +63,7 @@ export default function CompletionScreen() {
   const [totalSessions, setTotalSessions] = useState(0);
   const [inviteCode, setInviteCode] = useState('');
   const [reward, setReward] = useState<WorkoutXpReward | null>(null);
+  const [badgeRewards, setBadgeRewards] = useState<BadgeUnlockResult[]>([]);
 
   // Hold the card for 2s before revealing buttons
   useEffect(() => {
@@ -90,6 +95,15 @@ export default function CompletionScreen() {
         setReward(earned);
         syncCompletionToCloud(s.current); // fire-and-forget
       }
+      const unlockedBadges = await evaluateBadgeUnlocks({
+        event: isTestMode ? 'monthly_test_completed' : 'workout_completed',
+        reps: repCount,
+        durationMs,
+        mode: workoutMode,
+        manualAdjustments: manualAdjustmentCount,
+        nudgesUsed: nudgeCountAtCompletion,
+      });
+      setBadgeRewards(unlockedBadges);
     })();
   }, []);
 
@@ -231,6 +245,13 @@ export default function CompletionScreen() {
               <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
             </View>
           )}
+          {badgeRewards.map(badge => (
+            <View key={badge.definition.id} style={[styles.pill, styles.badgePill]}>
+              <Text style={styles.pillText}>
+                {badge.definition.icon} {badge.definition.name} +{badge.xpAwarded} XP
+              </Text>
+            </View>
+          ))}
         </View>
 
         <View style={styles.proofGrid}>
@@ -334,6 +355,7 @@ export default function CompletionScreen() {
         visible={showMilestone}
         onDismiss={() => setShowMilestone(false)}
       />
+      <BadgeUnlockCelebration rewards={badgeRewards} />
     </SafeAreaView>
   );
 }
@@ -419,6 +441,10 @@ const styles = StyleSheet.create({
   xpPill: {
     backgroundColor: colors.streak,
     borderColor: colors.streak,
+  },
+  badgePill: {
+    backgroundColor: '#3CB371',
+    borderColor: '#3CB371',
   },
   pillText: {
     color: '#FFF',
