@@ -7,7 +7,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>just20-jake</string>
+    <string>Just 20</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -27,8 +27,8 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>just20-jake</string>
-          <string>com.anonymous.just20jake</string>
+          <string>just20</string>
+          <string>com.anonymous.just20</string>
         </array>
       </dict>
     </array>
@@ -49,14 +49,14 @@
       <key>NSAllowsLocalNetworking</key>
       <true/>
     </dict>
-    <key>NSCameraUsageDescription</key>
-    <string>just20-jake needs the front camera to count your push-ups using pose detection.</string>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>just20-jake shows your location on your share card.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>just20-jake saves your completion card to your photos so you can share it.</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>Allow $(PRODUCT_NAME) to access your photos</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Just 20 uses the camera on-device to count clean push-ups. Video is not stored.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Just 20 adds your approximate location to a proof card only when you tap Add location.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Just 20 can save a completion card to your photo library when you choose to share it.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Just 20 can read the completion card it creates when you choose a share destination.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

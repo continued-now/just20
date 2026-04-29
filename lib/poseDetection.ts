@@ -122,7 +122,7 @@ function getCalibration(kps: Keypoint[], confidence: number): {
 
   if (visibleAny === 0) {
     return {
-      calibration: 'Position yourself in frame',
+      calibration: 'Face the camera and fit your body in frame',
       trackingQuality: 0,
       bodyInFrame: false,
     };
@@ -144,19 +144,19 @@ function getCalibration(kps: Keypoint[], confidence: number): {
     0,
     Math.min(1, scoreQuality * 0.45 + visibilityQuality * 0.4 + framingQuality * 0.15)
   );
-  const bodyInFrame = visibleRequired >= 6 && trackingQuality >= 0.45;
+  const bodyInFrame = visibleRequired >= 5 && trackingQuality >= 0.42;
 
   if (visibleRequired < 4) {
-    return { calibration: 'Show shoulders, hands, hips', trackingQuality, bodyInFrame: false };
+    return { calibration: 'Face camera: show shoulders, hands, hips', trackingQuality, bodyInFrame: false };
   }
   if (minX < 0.03 || maxX > 0.97 || minY < 0.03 || maxY > 0.97) {
     return { calibration: 'Move back until your full body fits', trackingQuality, bodyInFrame };
   }
   if (height < 0.32 || width < 0.2) {
-    return { calibration: 'Move closer or tilt toward your body', trackingQuality, bodyInFrame };
+    return { calibration: 'Move closer; keep camera facing your front', trackingQuality, bodyInFrame };
   }
   if (trackingQuality < 0.45) {
-    return { calibration: 'Improve lighting or camera angle', trackingQuality, bodyInFrame };
+    return { calibration: 'Improve lighting or wear fitted clothing', trackingQuality, bodyInFrame };
   }
 
   return { calibration: 'Tracking locked', trackingQuality, bodyInFrame };

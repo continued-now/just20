@@ -3,7 +3,9 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } f
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { getBooleanSetting, getSetting, setBooleanSetting, setSetting } from '../../lib/db';
+import { recordGrowthEvent } from '../../lib/growth';
 import {
+  DEFAULT_MAX_DAILY_NUDGES,
   DEFAULT_NOTIFICATION_MODE,
   DEFAULT_SCHEDULED_HOUR,
   type NotificationMode,
@@ -12,13 +14,14 @@ import {
   getRemainingNudgeCount,
   hasScheduledWindowNotification,
   requestPermission,
-  scheduleNudges,
+  scheduleRandomNudges,
   scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
 } from '../../lib/notifications';
 import { scheduleSharedJust20StatusUpdate } from '../../lib/widgetStatus';
 
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 6); // 6am–9pm
+const MAX_NUDGE_OPTIONS = [8, 12, 20];
 function formatHour(h: number) {
   if (h === 12) return '12pm';
   if (h < 12) return `${h}am`;
@@ -31,6 +34,11 @@ function normalizeMode(value: string | null): NotificationMode {
   return DEFAULT_NOTIFICATION_MODE;
 }
 
+function normalizeNudgeLimit(value: string | null): number {
+  const parsed = Number.parseInt(value ?? String(DEFAULT_MAX_DAILY_NUDGES), 10);
+  return MAX_NUDGE_OPTIONS.includes(parsed) ? parsed : DEFAULT_MAX_DAILY_NUDGES;
+}
+
 export default function SettingsScreen() {
   const [notificationsOn, setNotificationsOn] = useState(false);
   const [mode, setMode] = useState<NotificationMode>(DEFAULT_NOTIFICATION_MODE);
@@ -38,27 +46,53 @@ export default function SettingsScreen() {
   const [widgetUrgency, setWidgetUrgency] = useState(true);
   const [watchNudges, setWatchNudges] = useState(true);
   const [lockInMode, setLockInMode] = useState(false);
+  const [ugcRepostOk, setUgcRepostOk] = useState(false);
+  const [maxDailyNudges, setMaxDailyNudges] = useState(DEFAULT_MAX_DAILY_NUDGES);
 
   useEffect(() => {
+    let active = true;
+
     async function load() {
-      const [nudgeCount, scheduledActive, savedMode, savedHour, savedWidgetUrgency, savedWatchNudges, savedLockIn] = await Promise.all([
-        getRemainingNudgeCount(),
-        hasScheduledWindowNotification(),
-        getSetting('notification_mode'),
-        getSetting('scheduled_hour'),
-        getBooleanSetting('widget_urgency_enabled', true),
-        getBooleanSetting('watch_nudges_enabled', true),
-        getBooleanSetting('lock_in_mode_enabled', false),
-      ]);
-      const initialMode = normalizeMode(savedMode);
-      setMode(initialMode);
-      setNotificationsOn(initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0);
-      if (savedHour) setScheduledHour(parseInt(savedHour, 10));
-      setWidgetUrgency(savedWidgetUrgency);
-      setWatchNudges(savedWatchNudges);
-      setLockInMode(savedLockIn);
+      try {
+        const [
+          nudgeCount,
+          scheduledActive,
+          savedMode,
+          savedHour,
+          savedWidgetUrgency,
+          savedWatchNudges,
+          savedLockIn,
+          savedUgcRepostOk,
+          savedMaxDailyNudges,
+        ] = await Promise.all([
+          getRemainingNudgeCount(),
+          hasScheduledWindowNotification(),
+          getSetting('notification_mode'),
+          getSetting('scheduled_hour'),
+          getBooleanSetting('widget_urgency_enabled', true),
+          getBooleanSetting('watch_nudges_enabled', true),
+          getBooleanSetting('lock_in_mode_enabled', false),
+          getBooleanSetting('ugc_repost_ok', false),
+          getSetting('max_daily_nudges'),
+        ]);
+        if (!active) return;
+        const initialMode = normalizeMode(savedMode);
+        setMode(initialMode);
+        setNotificationsOn(initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0);
+        if (savedHour) setScheduledHour(parseInt(savedHour, 10));
+        setWidgetUrgency(savedWidgetUrgency);
+        setWatchNudges(savedWatchNudges);
+        setLockInMode(savedLockIn);
+        setUgcRepostOk(savedUgcRepostOk);
+        setMaxDailyNudges(normalizeNudgeLimit(savedMaxDailyNudges));
+      } catch {
+        if (active) setNotificationsOn(false);
+      }
     }
     load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function ensureNotificationPermission(): Promise<boolean> {
@@ -77,7 +111,7 @@ export default function SettingsScreen() {
 
     if (next === 'random') {
       await cancelWindowedNotification();
-      await scheduleNudges({ source: 'random' });
+      await scheduleRandomNudges();
       const count = await getRemainingNudgeCount();
       setNotificationsOn(count > 0);
       return count > 0;
@@ -96,49 +130,116 @@ export default function SettingsScreen() {
   }
 
   async function handleModeChange(next: NotificationMode) {
+    const previousMode = mode;
+    const previousNotificationsOn = notificationsOn;
     setMode(next);
-    await setSetting('notification_mode', next);
-    await enableMode(next);
-    scheduleSharedJust20StatusUpdate();
+    try {
+      await setSetting('notification_mode', next);
+      await enableMode(next);
+      scheduleSharedJust20StatusUpdate();
+    } catch {
+      setMode(previousMode);
+      setNotificationsOn(previousNotificationsOn);
+      Alert.alert('Notifications unavailable', 'Could not update reminder settings. Please try again.');
+    }
   }
 
   async function handleHourChange(h: number) {
+    const previousHour = scheduledHour;
     setScheduledHour(h);
-    await setSetting('scheduled_hour', String(h));
-    if (notificationsOn) {
-      await enableMode(mode, h);
+    try {
+      await setSetting('scheduled_hour', String(h));
+      if (notificationsOn) {
+        await enableMode(mode, h);
+      }
       scheduleSharedJust20StatusUpdate();
+    } catch {
+      setScheduledHour(previousHour);
+      Alert.alert('Notifications unavailable', 'Could not update reminder time. Please try again.');
+    }
+  }
+
+  async function handleMaxNudgesChange(next: number) {
+    const previous = maxDailyNudges;
+    setMaxDailyNudges(next);
+    try {
+      await setSetting('max_daily_nudges', String(next));
+      if (notificationsOn && mode !== 'strict') {
+        await enableMode(mode);
+      }
+      scheduleSharedJust20StatusUpdate();
+    } catch {
+      setMaxDailyNudges(previous);
+      Alert.alert('Notifications unavailable', 'Could not update nudge limits. Please try again.');
     }
   }
 
   async function handleReschedule() {
-    const scheduled = await enableMode(mode);
-    if (!scheduled) return;
+    let scheduled = false;
+    try {
+      scheduled = await enableMode(mode);
+      if (!scheduled) return;
+    } catch {
+      Alert.alert('Notifications unavailable', 'Could not reschedule reminders. Please try again.');
+      return;
+    }
 
     if (mode === 'strict') {
       Alert.alert('Window scheduled', `You'll get notified at ${formatHour(scheduledHour)} daily.`);
     } else if (mode === 'scheduled_fallback') {
-      Alert.alert('Window + fallback scheduled', `Your 10-minute window opens at ${formatHour(scheduledHour)}. Nudges kick in if you miss it.`);
+      Alert.alert('Daily window scheduled', `Your 10-minute window opens at ${formatHour(scheduledHour)}. Backup nudges kick in if you miss it.`);
     } else {
-      Alert.alert('Nudges rescheduled', '20 new nudges scheduled for today.');
+      Alert.alert('Nudges rescheduled', `${maxDailyNudges} new nudges scheduled for today.`);
     }
     scheduleSharedJust20StatusUpdate();
   }
 
   async function handleClearNudges() {
-    await cancelAllNudges();
-    await cancelWindowedNotification();
-    setNotificationsOn(false);
-    Alert.alert('Notifications cleared', 'All reminders cancelled.');
-    scheduleSharedJust20StatusUpdate();
+    try {
+      await cancelAllNudges();
+      await cancelWindowedNotification();
+      setNotificationsOn(false);
+      Alert.alert('Notifications cleared', 'All reminders cancelled.');
+      scheduleSharedJust20StatusUpdate();
+    } catch {
+      Alert.alert('Notifications unavailable', 'Could not clear reminders. Please try again.');
+    }
   }
 
   async function setWidgetSetting(key: string, value: boolean) {
+    const previousWidgetUrgency = widgetUrgency;
+    const previousWatchNudges = watchNudges;
+    const previousLockInMode = lockInMode;
     if (key === 'widget_urgency_enabled') setWidgetUrgency(value);
     if (key === 'watch_nudges_enabled') setWatchNudges(value);
     if (key === 'lock_in_mode_enabled') setLockInMode(value);
-    await setBooleanSetting(key, value);
-    scheduleSharedJust20StatusUpdate();
+    try {
+      await setBooleanSetting(key, value);
+      scheduleSharedJust20StatusUpdate();
+    } catch {
+      setWidgetUrgency(previousWidgetUrgency);
+      setWatchNudges(previousWatchNudges);
+      setLockInMode(previousLockInMode);
+      Alert.alert('Settings unavailable', 'Could not update companion settings. Please try again.');
+    }
+  }
+
+  async function handleUgcRepostChange(value: boolean) {
+    const previous = ugcRepostOk;
+    setUgcRepostOk(value);
+    try {
+      await setBooleanSetting('ugc_repost_ok', value);
+      await recordGrowthEvent({
+        eventType: 'repost_preference_updated',
+        context: 'profile',
+        source: 'system',
+        campaign: 'proof_card',
+        metadata: { enabled: value },
+      });
+    } catch {
+      setUgcRepostOk(previous);
+      Alert.alert('Settings unavailable', 'Could not update sharing preferences. Please try again.');
+    }
   }
 
   return (
@@ -161,7 +262,7 @@ export default function SettingsScreen() {
                 <Text style={[styles.modeTitle, mode === 'scheduled_fallback' && styles.modeTitleActive]}>
                   Set a time
                 </Text>
-                <Text style={styles.modeSub}>Default. 10-minute window. If you miss it, nudges kick in and XP starts dropping.</Text>
+                <Text style={styles.modeSub}>Default. 10-minute window. If you miss it, backup nudges kick in and XP starts dropping.</Text>
               </View>
               {mode === 'scheduled_fallback' && <Text style={styles.modeCheck}>✓</Text>}
             </View>
@@ -199,7 +300,9 @@ export default function SettingsScreen() {
                 <Text style={[styles.modeTitle, mode === 'random' && styles.modeTitleActive]}>
                   Get annoyed
                 </Text>
-                <Text style={styles.modeSub}>20 random nudges, 7am–10pm. Flexible, but lower XP as nudges stack.</Text>
+                <Text style={styles.modeSub}>
+                  Up to {maxDailyNudges} random nudges, 7am-10pm. Flexible, but lower XP as nudges stack.
+                </Text>
               </View>
               {mode === 'random' && <Text style={styles.modeCheck}>✓</Text>}
             </View>
@@ -208,12 +311,12 @@ export default function SettingsScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Widget & Watch</Text>
-          <Text style={styles.sectionDesc}>Let your mascot bother you outside the app.</Text>
+          <Text style={styles.sectionDesc}>Let your mascot keep the promise visible outside the app.</Text>
 
           <View style={styles.row}>
             <View style={styles.rowText}>
               <Text style={styles.rowLabel}>Home Screen Widget urgency</Text>
-              <Text style={styles.rowSub}>Show stronger widget copy as the day gets late.</Text>
+              <Text style={styles.rowSub}>Use stronger reminder copy as the day gets late.</Text>
             </View>
             <Switch
               value={widgetUrgency}
@@ -225,7 +328,7 @@ export default function SettingsScreen() {
           <View style={styles.row}>
             <View style={styles.rowText}>
               <Text style={styles.rowLabel}>Apple Watch nudges</Text>
-              <Text style={styles.rowSub}>Keep watch status and complications noisy.</Text>
+              <Text style={styles.rowSub}>Mirror your daily status and reminders on your watch.</Text>
             </View>
             <Switch
               value={watchNudges}
@@ -237,7 +340,7 @@ export default function SettingsScreen() {
           <View style={styles.row}>
             <View style={styles.rowText}>
               <Text style={styles.rowLabel}>Lock-in Mode</Text>
-              <Text style={styles.rowSub}>Opt into the more aggressive late-day widget/watch tone.</Text>
+              <Text style={styles.rowSub}>Opt into a firmer late-day reminder tone.</Text>
             </View>
             <Switch
               value={lockInMode}
@@ -246,9 +349,18 @@ export default function SettingsScreen() {
             />
           </View>
 
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Nudge Limits</Text>
+          <Text style={styles.sectionDesc}>Cap fallback reminders before quiet hours begin.</Text>
+          <NudgeLimitPicker
+            maxDailyNudges={maxDailyNudges}
+            onNudgeLimitChange={handleMaxNudgesChange}
+          />
           <View style={styles.infoRow}>
             <Text style={styles.rowLabel}>Quiet hours</Text>
-            <Text style={styles.rowSub}>10pm–7am</Text>
+            <Text style={styles.rowSub}>10pm-7am</Text>
           </View>
         </View>
 
@@ -262,19 +374,25 @@ export default function SettingsScreen() {
                 {mode === 'strict'
                   ? `Strict window at ${formatHour(scheduledHour)}`
                   : mode === 'scheduled_fallback'
-                  ? `${formatHour(scheduledHour)} window + fallback nudges`
-                  : '20 random nudges between 7am–10pm'}
+                  ? `${formatHour(scheduledHour)} window + backup nudges`
+                  : `${maxDailyNudges} random nudges between 7am-10pm`}
               </Text>
             </View>
             <Switch
               value={notificationsOn}
               onValueChange={async (v) => {
+                const previous = notificationsOn;
                 setNotificationsOn(v);
-                if (v) {
-                  await enableMode(mode);
-                } else {
-                  await cancelAllNudges();
-                  await cancelWindowedNotification();
+                try {
+                  if (v) {
+                    await enableMode(mode);
+                  } else {
+                    await cancelAllNudges();
+                    await cancelWindowedNotification();
+                  }
+                } catch {
+                  setNotificationsOn(previous);
+                  Alert.alert('Notifications unavailable', 'Could not update reminders. Please try again.');
                 }
                 scheduleSharedJust20StatusUpdate();
               }}
@@ -294,10 +412,27 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sharing</Text>
+          <Text style={styles.sectionDesc}>Choose how your proof cards can be shared.</Text>
+
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Okay to repost tagged proof</Text>
+              <Text style={styles.rowSub}>If you tag Just 20, this marks you as open to being featured later.</Text>
+            </View>
+            <Switch
+              value={ugcRepostOk}
+              onValueChange={handleUgcRepostChange}
+              trackColor={{ true: colors.success, false: colors.border }}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
           <View style={styles.infoRow}>
             <Text style={styles.rowLabel}>App</Text>
-            <Text style={styles.rowSub}>just20</Text>
+            <Text style={styles.rowSub}>Just 20</Text>
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.rowLabel}>Version</Text>
@@ -345,9 +480,37 @@ function TimePicker({
   );
 }
 
+function NudgeLimitPicker({
+  maxDailyNudges,
+  onNudgeLimitChange,
+}: {
+  maxDailyNudges: number;
+  onNudgeLimitChange: (count: number) => void;
+}) {
+  return (
+    <View style={styles.limitCard}>
+      <Text style={styles.timePickerLabel}>Maximum daily nudges</Text>
+      <View style={styles.limitRow}>
+        {MAX_NUDGE_OPTIONS.map((count) => (
+          <TouchableOpacity
+            key={count}
+            style={[styles.limitChip, count === maxDailyNudges && styles.hourChipActive]}
+            onPress={() => onNudgeLimitChange(count)}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.hourChipText, count === maxDailyNudges && styles.hourChipTextActive]}>
+              {count}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.xl },
+  content: { padding: spacing.lg, gap: spacing.xl, paddingBottom: spacing.xxl + spacing.xl },
   heading: { fontSize: 28, fontWeight: '900', color: colors.text },
 
   section: { gap: spacing.sm },
@@ -363,7 +526,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.subtext,
     fontWeight: '500',
-    marginTop: -spacing.xs,
     marginBottom: spacing.xs,
   },
 
@@ -411,7 +573,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: spacing.md,
-    marginTop: -spacing.xs,
   },
   timePickerLabel: {
     fontSize: fontSize.xs,
@@ -444,6 +605,28 @@ const styles = StyleSheet.create({
   },
   hourChipTextActive: { color: '#FFFFFF' },
 
+  limitCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  limitRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  limitChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
   row: {
     backgroundColor: colors.card,
     borderRadius: radius.md,
@@ -451,6 +634,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -472,6 +656,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },

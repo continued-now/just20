@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AVD_NAME="${1:-JamfulPlay}"
+AVD_NAME="${1:-Just20}"
 SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 EMULATOR="$SDK_ROOT/emulator/emulator"
 ADB="$SDK_ROOT/platform-tools/adb"
 CONFIG="$HOME/.android/avd/$AVD_NAME.avd/config.ini"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 METRO_PORT="${METRO_PORT:-8081}"
-APP_ID="com.anonymous.just20jake"
-OLD_APP_ID="com.anonymous.just20"
+APP_ID="com.anonymous.just20"
+OLD_APP_ID="com.anonymous.just20jake"
 
 set_config_value() {
   local key="$1"

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { updateUsername } from '../lib/user';
+import { validateUsername } from '../lib/validation';
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
@@ -22,16 +23,12 @@ export default function ProfileSetupScreen() {
   const inputRef = useRef<TextInput>(null);
 
   async function handleConfirm() {
-    const trimmed = name.trim();
-    if (trimmed.length < 2) {
-      setError('At least 2 characters.');
+    const validation = validateUsername(name);
+    if (validation.error || !validation.username) {
+      setError(validation.error ?? 'Invalid username.');
       return;
     }
-    if (trimmed.length > 20) {
-      setError('Max 20 characters.');
-      return;
-    }
-    await updateUsername(trimmed);
+    await updateUsername(validation.username);
     router.replace('/');
   }
 
@@ -62,7 +59,10 @@ export default function ProfileSetupScreen() {
               placeholder="e.g. Constant"
               placeholderTextColor={colors.subtext}
               value={name}
-              onChangeText={t => { setName(t); setError(''); }}
+              onChangeText={t => {
+                setName(t);
+                setError('');
+              }}
               maxLength={20}
               autoFocus
               returnKeyType="done"
@@ -78,7 +78,7 @@ export default function ProfileSetupScreen() {
               activeOpacity={0.85}
               disabled={!name.trim()}
             >
-              <Text style={styles.confirmBtnText}>LET'S GO →</Text>
+              <Text style={styles.confirmBtnText}>{"LET'S GO ->"}</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleSkip} activeOpacity={0.6}>
               <Text style={styles.skipText}>skip for now</Text>
@@ -142,7 +142,6 @@ const styles = StyleSheet.create({
     color: colors.accent,
     textAlign: 'center',
     fontWeight: '600',
-    marginTop: -spacing.sm,
   },
   actions: {
     paddingBottom: spacing.xl,

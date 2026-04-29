@@ -1,0 +1,1 @@
+just20://expo-development-client/?url=http%3A%2F%2F172.30.1.8%3A8081

@@ -1,10 +1,16 @@
 import * as Notifications from 'expo-notifications';
-import { clearNudgeScheduleFromToday, saveNudgeSchedule } from './db';
+import { Platform } from 'react-native';
+import { clearNudgeScheduleFromToday, getSetting, saveNudgeSchedule } from './db';
+import { devLog } from './diagnostics';
+import { localDayKey } from './dates';
 
 const START_HOUR = 7;
 const END_HOUR = 22;
 const NUDGE_COUNT = 20;
+const MIN_NUDGE_COUNT = 4;
 const WINDOW_MS = 10 * 60 * 1000;
+const SCHEDULE_AHEAD_DAYS = 3;
+const ANDROID_CHANNEL_ID = 'daily-reminders';
 const STREAK_AT_RISK_ID = 'streak-at-risk';
 const NUDGE_TYPE = 'nudge';
 const SCHEDULED_WINDOW_ID = 'scheduled-window';
@@ -12,6 +18,7 @@ const SCHEDULED_WINDOW_TYPE = 'scheduled-window';
 
 export const DEFAULT_NOTIFICATION_MODE = 'scheduled_fallback';
 export const DEFAULT_SCHEDULED_HOUR = 8;
+export const DEFAULT_MAX_DAILY_NUDGES = NUDGE_COUNT;
 
 export type NotificationMode = 'scheduled_fallback' | 'strict' | 'random';
 
@@ -60,6 +67,18 @@ const TIERS: { minRemaining: number; messages: string[] }[] = [
   },
 ];
 
+async function ensureAndroidNotificationChannel(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+    name: 'Daily reminders',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#58CC02',
+  }).catch(() => {});
+}
+
 function tier(remaining: number) {
   for (const t of TIERS) {
     if (remaining >= t.minRemaining) return t;
@@ -73,6 +92,13 @@ function pickMessage(messages: string[], date: Date): string {
   return msg.replace('[TIME]', t);
 }
 
+async function getConfiguredNudgeCount(): Promise<number> {
+  const savedCount = await getSetting('max_daily_nudges');
+  const parsed = Number.parseInt(savedCount ?? String(DEFAULT_MAX_DAILY_NUDGES), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_DAILY_NUDGES;
+  return Math.max(MIN_NUDGE_COUNT, Math.min(NUDGE_COUNT, parsed));
+}
+
 function isNudgeNotification(notification: Notifications.NotificationRequest): boolean {
   const data = notification.content.data;
   return data?.type === NUDGE_TYPE || typeof data?.nudgeIndex === 'number';
@@ -80,7 +106,26 @@ function isNudgeNotification(notification: Notifications.NotificationRequest): b
 
 function isScheduledWindowNotification(notification: Notifications.NotificationRequest): boolean {
   const data = notification.content.data;
-  return notification.identifier === SCHEDULED_WINDOW_ID || data?.type === SCHEDULED_WINDOW_TYPE;
+  return (
+    notification.identifier === SCHEDULED_WINDOW_ID ||
+    notification.identifier.startsWith(`${SCHEDULED_WINDOW_ID}:`) ||
+    data?.type === SCHEDULED_WINDOW_TYPE
+  );
+}
+
+function isTodaysNudgeNotification(notification: Notifications.NotificationRequest): boolean {
+  const nudgeDate = notification.content.data?.nudgeDate;
+  return isNudgeNotification(notification) && (typeof nudgeDate !== 'string' || nudgeDate === localDayKey());
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function windowNotificationIdentifier(date: Date): string {
+  return `${SCHEDULED_WINDOW_ID}:${localDayKey(date)}`;
 }
 
 function nextScheduledWindowDate(hour: number, skipToday = false): Date {
@@ -95,26 +140,48 @@ function nextScheduledWindowDate(hour: number, skipToday = false): Date {
   return fireAt;
 }
 
+function nextNudgeStartDate(skipToday = false): Date {
+  const now = new Date();
+  const startAt = new Date(now);
+  startAt.setHours(START_HOUR, 0, 0, 0);
+
+  if (skipToday || startAt.getTime() <= now.getTime()) {
+    startAt.setDate(startAt.getDate() + 1);
+  }
+
+  return startAt;
+}
+
 function nudgeScheduleBounds(startAfter?: Date): { earliest: number; endMs: number } {
   const now = new Date();
   const scheduleDay = startAfter ? new Date(startAfter) : new Date(now);
-  const startMs = new Date(scheduleDay).setHours(START_HOUR, 0, 0, 0);
-  const endMs = new Date(scheduleDay).setHours(END_HOUR, 0, 0, 0);
-  const earliest = Math.max(
+  let startMs = new Date(scheduleDay).setHours(START_HOUR, 0, 0, 0);
+  let endMs = new Date(scheduleDay).setHours(END_HOUR, 0, 0, 0);
+  let earliest = Math.max(
     startMs,
     now.getTime() + 2 * 60 * 1000,
     startAfter?.getTime() ?? 0
   );
+
+  if (!startAfter && earliest >= endMs) {
+    scheduleDay.setDate(scheduleDay.getDate() + 1);
+    startMs = new Date(scheduleDay).setHours(START_HOUR, 0, 0, 0);
+    endMs = new Date(scheduleDay).setHours(END_HOUR, 0, 0, 0);
+    earliest = startMs;
+  }
 
   return { earliest, endMs };
 }
 
 export async function requestPermission(): Promise<boolean> {
   const { status } = await Notifications.requestPermissionsAsync();
+  devLog('notification_permission_result', { status });
   return status === 'granted';
 }
 
 export async function scheduleNudges(options: ScheduleNudgeOptions = {}): Promise<void> {
+  await ensureAndroidNotificationChannel();
+
   // Cancel old nudge notifications while preserving streak/social notifications.
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   for (const n of scheduled) {
@@ -123,40 +190,91 @@ export async function scheduleNudges(options: ScheduleNudgeOptions = {}): Promis
     }
   }
 
-  const { earliest, endMs } = nudgeScheduleBounds(options.startAfter);
-  const window = endMs - earliest;
+  const count = options.count ?? (await getConfiguredNudgeCount());
+  const firstBounds = nudgeScheduleBounds(options.startAfter);
+  const firstDate = new Date(firstBounds.earliest);
+  const schedules: { dateKey: string; times: Date[] }[] = [];
+  const allTimes: Date[] = [];
 
-  if (window <= 0) {
+  for (let dayIndex = 0; dayIndex < SCHEDULE_AHEAD_DAYS; dayIndex += 1) {
+    const bounds = dayIndex === 0
+      ? firstBounds
+      : nudgeScheduleBounds(
+          (() => {
+            const start = addLocalDays(firstDate, dayIndex);
+            if (options.startAfter) {
+              start.setHours(options.startAfter.getHours(), options.startAfter.getMinutes(), 0, 0);
+            } else {
+              start.setHours(START_HOUR, 0, 0, 0);
+            }
+            return start;
+          })()
+        );
+    const window = bounds.endMs - bounds.earliest;
+    if (window <= 0) continue;
+
+    const times: Date[] = [];
+    for (let i = 0; i < count; i++) {
+      const t = new Date(bounds.earliest + Math.random() * window);
+      times.push(t);
+    }
+    times.sort((a, b) => a.getTime() - b.getTime());
+
+    schedules.push({ dateKey: localDayKey(times[0] ?? new Date(bounds.earliest)), times });
+    allTimes.push(...times);
+  }
+
+  allTimes.sort((a, b) => a.getTime() - b.getTime());
+
+  if (allTimes.length === 0) {
     await saveNudgeSchedule([]);
+    devLog('nudges_schedule_skipped', { reason: 'empty_window', source: options.source ?? 'random' });
     return;
   }
 
-  const times: Date[] = [];
-  const count = options.count ?? NUDGE_COUNT;
-  for (let i = 0; i < count; i++) {
-    const t = new Date(earliest + Math.random() * window);
-    times.push(t);
-  }
-  times.sort((a, b) => a.getTime() - b.getTime());
+  await saveNudgeSchedule(allTimes);
 
-  await saveNudgeSchedule(times);
-
-  for (let i = 0; i < times.length; i++) {
-    const remaining = times.length - i;
-    const t = tier(remaining);
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'just20',
-        body: pickMessage(t.messages, times[i]),
-        sound: remaining <= 5 ? 'default' : undefined,
-        data: { type: NUDGE_TYPE, nudgeIndex: i, remaining, source: options.source ?? 'random' },
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: times[i],
-      },
-    });
+  for (const schedule of schedules) {
+    for (let i = 0; i < schedule.times.length; i++) {
+      const remaining = schedule.times.length - i;
+      const t = tier(remaining);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Just 20',
+          body: pickMessage(t.messages, schedule.times[i]),
+          sound: remaining <= 5 ? 'default' : undefined,
+          data: {
+            type: NUDGE_TYPE,
+            nudgeIndex: i,
+            nudgeDate: schedule.dateKey,
+            remaining,
+            source: options.source ?? 'random',
+          },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: schedule.times[i],
+          channelId: ANDROID_CHANNEL_ID,
+        },
+      });
+    }
   }
+  devLog('nudges_scheduled', {
+    count: allTimes.length,
+    days: schedules.length,
+    source: options.source ?? 'random',
+    firstFireAt: allTimes[0]?.toISOString(),
+    lastFireAt: allTimes[allTimes.length - 1]?.toISOString(),
+  });
+}
+
+export async function scheduleRandomNudges(
+  options: ScheduleWindowOptions = {}
+): Promise<void> {
+  await scheduleNudges({
+    source: 'random',
+    startAfter: options.skipToday ? nextNudgeStartDate(true) : undefined,
+  });
 }
 
 export async function scheduleWindowWithFallbackNudges(
@@ -173,23 +291,46 @@ export async function scheduleWindowedNotification(
   hour: number,
   options: ScheduleWindowOptions = {}
 ): Promise<void> {
-  await Notifications.cancelScheduledNotificationAsync(SCHEDULED_WINDOW_ID).catch(() => {});
-  await Notifications.scheduleNotificationAsync({
-    identifier: SCHEDULED_WINDOW_ID,
-    content: {
-      title: 'just20 ⚡',
-      body: "Your window is open. Drop and give 20. 10 minutes on the clock.",
-      sound: 'default',
-      data: { type: SCHEDULED_WINDOW_TYPE },
-    },
-    trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: nextScheduledWindowDate(hour, options.skipToday),
-    },
+  await ensureAndroidNotificationChannel();
+  await cancelWindowedNotification();
+
+  const firstDate = nextScheduledWindowDate(hour, options.skipToday);
+  const dates = Array.from({ length: SCHEDULE_AHEAD_DAYS }, (_, dayIndex) =>
+    addLocalDays(firstDate, dayIndex)
+  );
+
+  for (const date of dates) {
+    await Notifications.scheduleNotificationAsync({
+      identifier: windowNotificationIdentifier(date),
+      content: {
+        title: 'Just 20 ⚡',
+        body: "Your window is open. Drop and give 20. 10 minutes on the clock.",
+        sound: 'default',
+        data: { type: SCHEDULED_WINDOW_TYPE, windowDate: localDayKey(date) },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date,
+        channelId: ANDROID_CHANNEL_ID,
+      },
+    });
+  }
+  devLog('window_notification_scheduled', {
+    hour,
+    skipToday: options.skipToday ?? false,
+    days: dates.length,
+    firstFireAt: dates[0]?.toISOString(),
+    lastFireAt: dates[dates.length - 1]?.toISOString(),
   });
 }
 
 export async function cancelWindowedNotification(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  for (const n of scheduled) {
+    if (isScheduledWindowNotification(n)) {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    }
+  }
   await Notifications.cancelScheduledNotificationAsync(SCHEDULED_WINDOW_ID).catch(() => {});
 }
 
@@ -201,9 +342,12 @@ export async function cancelAllNudges(): Promise<void> {
     }
   }
   await clearNudgeScheduleFromToday();
+  devLog('nudges_cancelled');
 }
 
 export async function scheduleStreakAtRiskNotification(currentStreak: number): Promise<void> {
+  await ensureAndroidNotificationChannel();
+
   // Cancel any existing streak-at-risk notification first
   await Notifications.cancelScheduledNotificationAsync(STREAK_AT_RISK_ID).catch(() => {});
 
@@ -224,7 +368,7 @@ export async function scheduleStreakAtRiskNotification(currentStreak: number): P
   await Notifications.scheduleNotificationAsync({
     identifier: STREAK_AT_RISK_ID,
     content: {
-      title: 'just20 ⚠️',
+      title: 'Just 20 ⚠️',
       body,
       sound: 'default',
       data: { type: 'streak-at-risk' },
@@ -232,13 +376,14 @@ export async function scheduleStreakAtRiskNotification(currentStreak: number): P
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: ninepm,
+      channelId: ANDROID_CHANNEL_ID,
     },
   });
 }
 
 export async function getRemainingNudgeCount(): Promise<number> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-  return scheduled.filter(isNudgeNotification).length;
+  return scheduled.filter(isTodaysNudgeNotification).length;
 }
 
 export async function hasScheduledWindowNotification(): Promise<boolean> {
@@ -247,6 +392,8 @@ export async function hasScheduledWindowNotification(): Promise<boolean> {
 }
 
 export function setupNotificationHandler(): void {
+  ensureAndroidNotificationChannel();
+
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,

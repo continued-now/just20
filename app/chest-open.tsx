@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { openWeeklyChest, getCoins } from '../lib/coins';
@@ -8,7 +8,7 @@ import { openWeeklyChest, getCoins } from '../lib/coins';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedView = Animated.View as any;
 
-const COIN_COLORS = ['#FFD700', '#FFA500', '#FF6B35', '#FFD700', '#FFEC8B'];
+const COIN_COLORS = [colors.yellow, colors.streak, colors.brand, colors.yellow, '#FFEC8B'];
 const COIN_COUNT = 20;
 
 export default function ChestOpenScreen() {
@@ -17,6 +17,8 @@ export default function ChestOpenScreen() {
   const [reward, setReward] = useState<number | null>(null);
   const [balance, setBalance] = useState(0);
 
+  const mountedRef = useRef(true);
+  const resultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const chestOpacity = useRef(new Animated.Value(1)).current;
@@ -35,7 +37,15 @@ export default function ChestOpenScreen() {
   ).current;
 
   useEffect(() => {
-    getCoins().then(c => setBalance(c.balance));
+    getCoins()
+      .then(c => {
+        if (mountedRef.current) setBalance(c.balance);
+      })
+      .catch(() => {});
+    return () => {
+      mountedRef.current = false;
+      if (resultTimerRef.current) clearTimeout(resultTimerRef.current);
+    };
   }, []);
 
   async function handleOpen() {
@@ -51,10 +61,26 @@ export default function ChestOpenScreen() {
       Animated.timing(shakeAnim, { toValue: 0, duration: 80, useNativeDriver: true }),
     ]).start(async () => {
       // Claim the reward
-      const amount = await openWeeklyChest();
-      const newCoins = await getCoins();
+      let amount: number | null = null;
+      let newBalance = balance;
+      try {
+        amount = await openWeeklyChest();
+        const newCoins = await getCoins();
+        newBalance = newCoins.balance;
+      } catch {
+        setPhase('idle');
+        Alert.alert('Chest unavailable', 'Could not open the weekly chest. Please try again.');
+        return;
+      }
+
+      if (amount === null) {
+        setPhase('idle');
+        Alert.alert('Chest unavailable', 'This chest is not ready yet.');
+        return;
+      }
+
       setReward(amount);
-      setBalance(newCoins.balance);
+      setBalance(newBalance);
 
       // Chest pops open
       Animated.parallel([
@@ -88,7 +114,8 @@ export default function ChestOpenScreen() {
       Animated.parallel(coinAnims).start();
 
       // Show result
-      setTimeout(() => {
+      resultTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) return;
         Animated.timing(resultOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
         setPhase('result');
       }, 600);

@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
+import { captureInboundAttribution } from '../lib/growth';
 import { linkBuddy } from '../lib/social';
 
 function firstParam(value: string | string[] | undefined): string {
@@ -11,40 +12,67 @@ function firstParam(value: string | string[] | undefined): string {
 
 export default function ChallengeInviteScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ code?: string; days?: string }>();
+  const params = useLocalSearchParams<{
+    code?: string;
+    days?: string;
+    src?: string;
+    source?: string;
+    campaign?: string;
+    creator?: string;
+  }>();
   const [joining, setJoining] = useState(false);
 
   const code = firstParam(params.code).trim().toUpperCase();
+  const source = firstParam(params.src) || firstParam(params.source);
+  const campaign = firstParam(params.campaign);
+  const creatorCode = firstParam(params.creator);
   const rawDays = Number.parseInt(firstParam(params.days) || '7', 10);
   const challengeDays = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 30) : 7;
   const hasCode = code.length > 0;
 
+  useEffect(() => {
+    captureInboundAttribution({
+      context: 'challenge',
+      source,
+      campaign,
+      creatorCode,
+      inviteCode: code,
+      targetUrl: 'just20://challenge',
+      metadata: { days: challengeDays },
+    }).catch(() => {});
+  }, [campaign, challengeDays, code, creatorCode, source]);
+
   async function handleJoin() {
     if (!hasCode || joining) return;
     setJoining(true);
-    const result = await linkBuddy(code);
-    setJoining(false);
+    try {
+      const result = await linkBuddy(code);
 
-    if (result.success) {
-      Alert.alert(
-        'Challenge joined',
-        `You and ${result.username ?? 'your buddy'} are now linked for the ${challengeDays}-day pushup challenge.`,
-        [{ text: 'Go to Squad', onPress: () => router.replace('/(tabs)/squad' as any) }]
-      );
-      return;
+      if (result.success) {
+        Alert.alert(
+          'Challenge joined',
+          `You and ${result.username ?? 'your buddy'} are now linked for the ${challengeDays}-day pushup challenge.`,
+          [{ text: 'Go to Squad', onPress: () => router.replace('/(tabs)/squad' as any) }]
+        );
+        return;
+      }
+
+      Alert.alert('Could not join', result.error ?? 'This challenge link could not be joined.');
+    } catch {
+      Alert.alert('Could not join', 'This challenge link could not be joined.');
+    } finally {
+      setJoining(false);
     }
-
-    Alert.alert('Could not join', result.error ?? 'This challenge link could not be joined.');
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.wrap}>
+      <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <Text style={styles.kicker}>Just20 Challenge</Text>
+          <Text style={styles.kicker}>Just 20 Challenge</Text>
           <Text style={styles.title}>{challengeDays} days. 20 pushups. No hiding.</Text>
           <Text style={styles.body}>
-            Accepting links you with the sender so your Squad tab can keep the pressure visible.
+            Joining links you with the friend who sent this, so your Squad tab can keep the pressure visible.
           </Text>
 
           <View style={styles.codeBox}>
@@ -69,7 +97,7 @@ export default function ChallengeInviteScreen() {
             <Text style={styles.secondaryText}>Maybe later</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -77,7 +105,7 @@ export default function ChallengeInviteScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   wrap: {
-    flex: 1,
+    flexGrow: 1,
     padding: spacing.lg,
     justifyContent: 'center',
   },
@@ -110,10 +138,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   codeBox: {
-    backgroundColor: '#FFF6E8',
+    backgroundColor: colors.streakSoft,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#FFD9A8',
+    borderColor: colors.creamDeep,
     padding: spacing.lg,
     alignItems: 'center',
     gap: spacing.xs,

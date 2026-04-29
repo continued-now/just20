@@ -4,42 +4,46 @@ import { router } from 'expo-router';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStreak } from '../hooks/useStreak';
-import { colors } from '../constants/theme';
+import { colors, spacing } from '../constants/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const TAB_CONFIG: Record<string, { active: IconName; inactive: IconName; label: string }> = {
   index:    { active: 'home',        inactive: 'home-outline',        label: 'Home'    },
-  streak:   { active: 'flame',       inactive: 'flame-outline',       label: 'Streak'  },
+  streak:   { active: 'flame',       inactive: 'flame-outline',       label: 'Streaks' },
   squad:    { active: 'people',      inactive: 'people-outline',      label: 'Squad'   },
-  settings: { active: 'settings',    inactive: 'settings-outline',    label: 'Settings' },
+  profile:  { active: 'person',      inactive: 'person-outline',      label: 'Profile' },
 };
 
 const TAB_HREFS: Record<string, string> = {
   index: '/',
   streak: '/(tabs)/streak',
   squad: '/(tabs)/squad',
-  settings: '/(tabs)/settings',
+  profile: '/(tabs)/profile',
 };
 
 export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { current: streakCount } = useStreak();
+  const currentRouteName = state.routes[state.index]?.name;
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, spacing.sm) + spacing.xs }]}>
       {state.routes.map((route, i) => {
-        const focused = state.index === i;
         const cfg = TAB_CONFIG[route.name];
         if (!cfg) return null;
 
         const isStreak = route.name === 'streak';
-        const iconColor = focused ? (isStreak ? colors.streak : colors.text) : colors.subtext;
+        const focused = route.name === 'profile'
+          ? currentRouteName === 'profile' || currentRouteName === 'settings'
+          : currentRouteName === route.name;
+        const isCurrentRoute = state.index === i;
+        const iconColor = focused ? (isStreak ? colors.streak : colors.brandDark) : colors.subtext;
 
         const onPress = () => {
           const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
           const href = TAB_HREFS[route.name];
-          if (!focused && !event.defaultPrevented) {
+          if (!isCurrentRoute && !event.defaultPrevented) {
             router.navigate((href ?? '/') as any);
           }
         };
@@ -73,6 +77,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 8,
+    paddingHorizontal: spacing.xs,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.06,
@@ -83,7 +88,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: 3,
-    paddingBottom: 2,
+    paddingBottom: spacing.xs,
   },
   pill: {
     borderRadius: 20,
@@ -91,10 +96,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   pillActive: {
-    backgroundColor: '#F0F0EC',
+    backgroundColor: colors.brandSoft,
   },
   pillStreak: {
-    backgroundColor: '#FFF0E8',
+    backgroundColor: colors.streakSoft,
   },
   iconWrap: {
     position: 'relative',
@@ -122,11 +127,12 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 10,
+    lineHeight: 13,
     fontWeight: '600',
     color: colors.subtext,
   },
   labelActive: {
-    color: colors.text,
+    color: colors.brandDark,
     fontWeight: '700',
   },
   labelStreak: {

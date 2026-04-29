@@ -1,4 +1,4 @@
-package com.anonymous.just20jake
+package com.anonymous.just20
 
 import android.os.Build
 import android.os.Bundle

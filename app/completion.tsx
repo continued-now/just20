@@ -15,29 +15,69 @@ import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import * as Location from 'expo-location';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
-import { getStreak, getBestCompletedTime, getCompletedSetsToday, getUserSeed } from '../lib/db';
-import { awardWorkoutXp, type WorkoutXpReward } from '../lib/xp';
+import {
+  getSessionRecoverySummary,
+  getStreak,
+  getBestCompletedTime,
+  getCompletedRepsToday,
+  getCompletedSetsToday,
+  getUserSeed,
+  type RecoveryType,
+  type SessionRecoverySummary,
+  type TrackingMethod,
+} from '../lib/db';
+import { awardWorkoutXp, getXp, type WorkoutXpReward } from '../lib/xp';
 import { syncCompletionToCloud } from '../lib/social';
-import { buildChallengeShareText, getOrCreateUser } from '../lib/user';
-import { buildDuelShareText, buildMonthlyTestShareText } from '../lib/viral';
+import { getOrCreateUser } from '../lib/user';
+import {
+  buildSharePayload,
+  growthEventFromPayload,
+  recordGrowthEvent,
+  type GrowthSharePayload,
+} from '../lib/growth';
 import { evaluateBadgeUnlocks, type BadgeUnlockResult } from '../lib/badges';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
 import { MilestoneCelebration } from '../components/MilestoneCelebration';
 import { BadgeUnlockCelebration } from '../components/BadgeUnlockCelebration';
 import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
+import { BrandLogo } from '../components/BrandLogo';
+import { XpProgressCard } from '../components/XpProgressCard';
+import { devLog } from '../lib/diagnostics';
+import {
+  getEquippedCosmetics,
+  getProofCardTheme,
+  type ProofCardThemeId,
+} from '../lib/shop';
 
 const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
-  const { reps, duration, nudgesUsed, mode, duelTarget, manualAdjustments } = useLocalSearchParams<{
+  const {
+    reps,
+    duration,
+    sessionId,
+    nudgesUsed,
+    mode,
+    duelTarget,
+    manualAdjustments,
+    trackingMethod,
+    recoveryType,
+    repairedDate,
+    targetReps,
+  } = useLocalSearchParams<{
     reps: string;
     duration: string;
+    sessionId?: string;
     nudgesUsed?: string;
     mode?: string;
     duelTarget?: string;
     manualAdjustments?: string;
+    trackingMethod?: TrackingMethod;
+    recoveryType?: RecoveryType;
+    repairedDate?: string;
+    targetReps?: string;
   }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
@@ -47,6 +87,14 @@ export default function CompletionScreen() {
   const durationSec = Math.round(durationMs / 1000);
   const nudgeCountAtCompletion = Math.max(0, parseInt(nudgesUsed ?? '0', 10) || 0);
   const manualAdjustmentCount = Math.max(0, parseInt(manualAdjustments ?? '0', 10) || 0);
+  const sessionTrackingMethod: TrackingMethod =
+    trackingMethod === 'manual' || trackingMethod === 'camera_adjusted' ? trackingMethod : 'camera';
+  const sessionRecoveryType: RecoveryType =
+    recoveryType === 'streak_patch' || recoveryType === 'debt_set' ? recoveryType : 'none';
+  const sessionTargetReps = Math.max(20, parseInt(targetReps ?? '20', 10) || 20);
+  const sessionEventId = sessionId
+    ? `${mode ?? 'daily'}:${sessionId}`
+    : `${mode ?? 'daily'}:${repCount}:${durationMs}:${nudgeCountAtCompletion}:${manualAdjustmentCount}`;
   const workoutMode = mode === 'test' ? 'test' : mode === 'duel' ? 'duel' : 'daily';
   const isTestMode = workoutMode === 'test';
   const isDuelMode = workoutMode === 'duel';
@@ -60,11 +108,16 @@ export default function CompletionScreen() {
   const [sharing, setSharing] = useState(false);
   const [setsToday, setSetsToday] = useState(1);
   const [dailyQuote, setDailyQuote] = useState('');
+  const [completedRepsToday, setCompletedRepsToday] = useState(repCount);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle');
   const [totalSessions, setTotalSessions] = useState(0);
   const [inviteCode, setInviteCode] = useState('');
   const [reward, setReward] = useState<WorkoutXpReward | null>(null);
   const [badgeRewards, setBadgeRewards] = useState<BadgeUnlockResult[]>([]);
+  const [totalXp, setTotalXp] = useState(0);
+  const [recoverySummary, setRecoverySummary] = useState<SessionRecoverySummary | null>(null);
+  const [proofThemeId, setProofThemeId] = useState<ProofCardThemeId | null>(null);
+  const proofTheme = getProofCardTheme(proofThemeId);
 
   // Hold the card for 2s before revealing buttons
   useEffect(() => {
@@ -72,41 +125,82 @@ export default function CompletionScreen() {
     return () => clearTimeout(t);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    getEquippedCosmetics()
+      .then(equipped => {
+        if (mounted) setProofThemeId(equipped.proofCardTheme);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   // Streak + personal best + sets today + user profile
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
-      const [s, best, sets, seed, user] = await Promise.all([
-        getStreak(),
-        getBestCompletedTime(),
-        getCompletedSetsToday(),
-        getUserSeed(),
-        getOrCreateUser(),
-      ]);
-      setStreak(s.current);
-      setSetsToday(sets);
-      setTotalSessions(s.totalSessions);
-      setInviteCode(user.inviteCode);
-      setDailyQuote(getDailyQuote(seed));
-      if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
-        setIsPB(true);
+      try {
+        const numericSessionId = Number.parseInt(sessionId ?? '', 10);
+        const [s, best, sets, dailyReps, seed, user, recovery] = await Promise.all([
+          getStreak(),
+          getBestCompletedTime(),
+          getCompletedSetsToday(),
+          getCompletedRepsToday(),
+          getUserSeed(),
+          getOrCreateUser(),
+          getSessionRecoverySummary(Number.isFinite(numericSessionId) ? numericSessionId : null),
+        ]);
+        if (!mounted) return;
+        setStreak(s.current);
+        setSetsToday(sets);
+        setCompletedRepsToday(Math.max(dailyReps, repCount));
+        setTotalSessions(s.totalSessions);
+        setInviteCode(user.inviteCode);
+        setDailyQuote(getDailyQuote(seed));
+        setRecoverySummary(recovery);
+        if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
+          setIsPB(true);
+        }
+        // Test-mode attempts under 20 reps are receipts, not daily completions.
+        if (repCount >= 20) {
+          const earned = await awardWorkoutXp(s.current, {
+            nudgesUsed: nudgeCountAtCompletion,
+            trackingMethod: sessionTrackingMethod,
+            manualAdjustments: manualAdjustmentCount,
+          });
+          if (!mounted) return;
+          setReward(earned);
+          syncCompletionToCloud(s.current); // fire-and-forget
+        }
+        if (sessionRecoveryType === 'none') {
+          const unlockedBadges = await evaluateBadgeUnlocks({
+            event: isTestMode ? 'monthly_test_completed' : 'workout_completed',
+            reps: repCount,
+            durationMs,
+            mode: workoutMode,
+            manualAdjustments: manualAdjustmentCount,
+            trackingMethod: sessionTrackingMethod,
+            nudgesUsed: nudgeCountAtCompletion,
+            eventId: sessionEventId,
+          });
+          if (mounted) setBadgeRewards(unlockedBadges);
+        } else if (mounted) {
+          setBadgeRewards([]);
+        }
+        const xp = await getXp();
+        if (mounted) setTotalXp(xp.totalEarned);
+        scheduleSharedJust20StatusUpdate();
+      } catch (error) {
+        devLog('completion_rewards_failed', { message: error instanceof Error ? error.message : String(error) });
+        // Completion proof card should stay usable even if rewards/social state fails.
       }
-      // Test-mode attempts under 20 reps are receipts, not daily completions.
-      if (repCount >= 20) {
-        const earned = await awardWorkoutXp(s.current, { nudgesUsed: nudgeCountAtCompletion });
-        setReward(earned);
-        syncCompletionToCloud(s.current); // fire-and-forget
-      }
-      const unlockedBadges = await evaluateBadgeUnlocks({
-        event: isTestMode ? 'monthly_test_completed' : 'workout_completed',
-        reps: repCount,
-        durationMs,
-        mode: workoutMode,
-        manualAdjustments: manualAdjustmentCount,
-        nudgesUsed: nudgeCountAtCompletion,
-      });
-      setBadgeRewards(unlockedBadges);
-      scheduleSharedJust20StatusUpdate();
     })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Show milestone celebration 2.4s after load (just after buttons appear)
@@ -142,28 +236,52 @@ export default function CompletionScreen() {
       } else {
         setLocationStatus('error');
       }
-    } catch (_) {
+    } catch {
       setLocationStatus('error');
     }
   }
 
   async function handleShareInvite() {
-    const text = isTestMode
-      ? buildMonthlyTestShareText({
+    const payload = isTestMode
+      ? buildSharePayload('monthly_test', {
           reps: repCount,
           durationSeconds: durationSec > 0 ? durationSec : null,
           inviteCode,
         })
       : isDuelMode
-      ? buildDuelShareText(inviteCode, durationSec > 0 ? durationSec : duelTargetSec, streak)
-      : buildChallengeShareText(inviteCode, streak, 7);
-    try { await Share.share({ message: text }); } catch { /* dismissed */ }
+      ? buildSharePayload('duel', {
+          inviteCode,
+          targetSeconds: durationSec > 0 ? durationSec : duelTargetSec,
+          streakDays: streak,
+          source: 'completion',
+        })
+      : buildSharePayload('challenge', {
+          inviteCode,
+          streakDays: streak,
+          challengeDays: 7,
+          source: 'completion',
+        });
+    try {
+      await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface: 'completion_invite' }));
+      await Share.share({ message: payload.message, title: payload.title });
+    } catch (error) {
+      await recordShareFailure(payload, 'completion_invite', error);
+      devLog('share_invite_failed', { message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async function handleInstagramShare() {
     if (!shotRef.current) return;
     setSharing(true);
     try {
+      await recordGrowthEvent({
+        eventType: 'share_opened',
+        context: 'completion',
+        source: 'completion',
+        campaign: 'proof_card',
+        inviteCode,
+        metadata: { surface: 'proof_card', platform: 'instagram_story' },
+      });
       const uri = await (shotRef.current as any).capture();
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status === 'granted') {
@@ -176,7 +294,57 @@ export default function CompletionScreen() {
       } else {
         await Sharing.shareAsync(uri, { mimeType: 'image/png' });
       }
-    } catch (_) {
+    } catch (error) {
+      await recordGrowthEvent({
+        eventType: 'share_failed',
+        context: 'completion',
+        source: 'completion',
+        campaign: 'proof_card',
+        inviteCode,
+        metadata: {
+          surface: 'proof_card',
+          platform: 'instagram_story',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      devLog('instagram_share_failed', { message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  async function handleSystemProofShare() {
+    if (!shotRef.current) return;
+    setSharing(true);
+    try {
+      await recordGrowthEvent({
+        eventType: 'share_opened',
+        context: 'completion',
+        source: 'completion',
+        campaign: 'proof_card',
+        inviteCode,
+        metadata: { surface: 'proof_card', platform: 'system_share' },
+      });
+      const uri = await (shotRef.current as any).capture();
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, { mimeType: 'image/png' });
+      } else {
+        await Share.share({ message: `Just did ${repCount} pushups on Just 20. #just20` });
+      }
+    } catch (error) {
+      await recordGrowthEvent({
+        eventType: 'share_failed',
+        context: 'completion',
+        source: 'completion',
+        campaign: 'proof_card',
+        inviteCode,
+        metadata: {
+          surface: 'proof_card',
+          platform: 'system_share',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      devLog('system_proof_share_failed', { message: error instanceof Error ? error.message : String(error) });
     } finally {
       setSharing(false);
     }
@@ -187,8 +355,26 @@ export default function CompletionScreen() {
     ? (MILESTONE_COPY[streak] ?? '').split('\n')[1]
     : null;
 
-  const displayReps = isTestMode ? repCount : setsToday > 1 ? setsToday * 20 : repCount;
-  const repLabel = isTestMode ? 'test reps' : setsToday > 1 ? `pushups · ${setsToday} sets` : 'pushups';
+  const displayReps = sessionRecoveryType !== 'none'
+    ? repCount
+    : isTestMode
+    ? repCount
+    : isDuelMode
+    ? repCount
+    : setsToday > 1
+    ? completedRepsToday
+    : repCount;
+  const repLabel = sessionRecoveryType === 'streak_patch'
+    ? `streak patch · target ${sessionTargetReps}`
+    : sessionRecoveryType === 'debt_set'
+    ? `debt set · target ${sessionTargetReps}`
+    : isTestMode
+    ? 'test reps'
+    : isDuelMode
+    ? 'duel reps'
+    : setsToday > 1
+    ? `pushups · ${setsToday} sets`
+    : 'pushups';
   const tagline = isTestMode
     ? 'monthly receipt, no hiding.'
     : isDuelMode
@@ -197,6 +383,7 @@ export default function CompletionScreen() {
     ? `built different, ${setsToday} sets strong.`
     : 'built different, one set at a time.';
   const proofLabel = isTestMode ? 'Monthly Test' : isDuelMode ? 'Duel Proof' : 'Proof Card';
+  const recoveryCopy = getRecoveryCopy(recoverySummary, sessionRecoveryType, repairedDate ?? null);
   const inviteLabel = isTestMode
     ? 'Share test'
     : isDuelMode
@@ -211,14 +398,23 @@ export default function CompletionScreen() {
     : 'Make this a 7-day pushup pact.';
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ViewShot ref={shotRef} options={{ format: 'png', quality: 1.0 }} style={styles.card}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: proofTheme.cardBg }]}>
+      <ViewShot
+        ref={shotRef}
+        options={{ format: 'png', quality: 1.0 }}
+        style={[styles.card, { backgroundColor: proofTheme.cardBg }]}
+      >
         <View style={styles.cardTop}>
-          <Text style={styles.brand}>just20</Text>
+          <BrandLogo size="sm" />
           <Text style={styles.tagline}>{tagline}</Text>
         </View>
-        <View style={styles.proofStamp}>
-          <Text style={styles.proofStampText}>{proofLabel}</Text>
+        <View
+          style={[
+            styles.proofStamp,
+            { backgroundColor: proofTheme.stampBg, borderColor: proofTheme.stampBorder },
+          ]}
+        >
+          <Text style={[styles.proofStampText, { color: proofTheme.stampText }]}>{proofLabel}</Text>
         </View>
 
         <View style={styles.repBlock}>
@@ -235,6 +431,23 @@ export default function CompletionScreen() {
           {durationSec > 0 && (
             <View style={styles.pill}>
               <Text style={styles.pillText}>in {durationSec}s</Text>
+            </View>
+          )}
+          {sessionTrackingMethod !== 'camera' && (
+            <View style={[styles.pill, styles.manualPill]}>
+              <Text style={styles.pillText}>
+                {sessionTrackingMethod === 'manual' ? 'Manual save' : 'Count fixed manually'}
+              </Text>
+            </View>
+          )}
+          {recoveryCopy && (
+            <View style={[styles.pill, styles.recoveryPill]}>
+              <Text style={styles.pillText}>{recoveryCopy}</Text>
+            </View>
+          )}
+          {recoverySummary && recoverySummary.recoveryXpAwarded > 0 && (
+            <View style={[styles.pill, styles.xpPill]}>
+              <Text style={styles.pillText}>+{recoverySummary.recoveryXpAwarded} recovery XP</Text>
             </View>
           )}
           {reward && reward.daily > 0 && (
@@ -257,26 +470,28 @@ export default function CompletionScreen() {
         </View>
 
         <View style={styles.proofGrid}>
-          <View style={styles.proofMetric}>
+          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
             <Text style={styles.proofMetricValue}>{durationSec > 0 ? `${durationSec}s` : '—'}</Text>
             <Text style={styles.proofMetricLabel}>time</Text>
           </View>
-          <View style={styles.proofMetric}>
+          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
             <Text style={styles.proofMetricValue}>{streak}</Text>
             <Text style={styles.proofMetricLabel}>streak</Text>
           </View>
-          <View style={styles.proofMetric}>
+          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
             <Text style={styles.proofMetricValue}>{reward?.daily ?? 0}</Text>
             <Text style={styles.proofMetricLabel}>xp</Text>
           </View>
         </View>
 
-        {locationName ? <Text style={styles.location}>@ {locationName}</Text> : null}
+        <XpProgressCard totalXp={totalXp} tone="dark" compact />
+
+        {locationName ? <Text style={[styles.location, { color: proofTheme.subtleText }]}>@ {locationName}</Text> : null}
 
         {/* Streak display — prominent "DAY X" identity marker */}
         {streak > 0 && (
           <View style={styles.streakBlock}>
-            <Text style={styles.streakDay}>DAY {streak}</Text>
+            <Text style={[styles.streakDay, { color: proofTheme.accent }]}>DAY {streak}</Text>
             {isStreakMilestone && milestoneLine ? (
               <Text style={styles.streakMilestone}>{milestoneLine}</Text>
             ) : (
@@ -286,12 +501,12 @@ export default function CompletionScreen() {
         )}
 
         <View style={styles.cardBottom}>
-          {dailyQuote ? <Text style={styles.dailyQuote}>"{dailyQuote}"</Text> : null}
-          <Text style={styles.hashtag}>#just20</Text>
+          {dailyQuote ? <Text style={styles.dailyQuote}>{`"${dailyQuote}"`}</Text> : null}
+          <Text style={[styles.hashtag, { color: proofTheme.subtleText }]}>#just20</Text>
         </View>
       </ViewShot>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, { backgroundColor: proofTheme.cardBg }]}>
         {buttonsVisible ? (
           <>
             {!locationName && (
@@ -314,15 +529,23 @@ export default function CompletionScreen() {
             )}
             <TouchableOpacity
               style={[styles.igBtn, sharing && styles.igBtnDisabled]}
-              onPress={handleInstagramShare}
+              onPress={handleSystemProofShare}
               disabled={sharing}
               activeOpacity={0.85}
             >
               {sharing ? (
                 <ActivityIndicator color="#000" />
               ) : (
-                <Text style={styles.igBtnText}>Post to Instagram</Text>
+                <Text style={styles.igBtnText}>Share proof card</Text>
               )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.doAnotherBtn, sharing && styles.igBtnDisabled]}
+              onPress={handleInstagramShare}
+              disabled={sharing}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.doAnotherBtnText}>Post to Instagram</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.doAnotherBtn}
@@ -340,6 +563,12 @@ export default function CompletionScreen() {
                   <Text style={styles.inviteShareText}>
                     {isTestMode ? 'Share test →' : isDuelMode ? 'Share duel →' : 'Share challenge →'}
                   </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/squad' as any)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.inviteShareText}>Invite to squad →</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -360,6 +589,40 @@ export default function CompletionScreen() {
       <BadgeUnlockCelebration rewards={badgeRewards} />
     </SafeAreaView>
   );
+}
+
+async function recordShareFailure(
+  payload: GrowthSharePayload,
+  surface: string,
+  error: unknown
+): Promise<void> {
+  await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
+    surface,
+    message: error instanceof Error ? error.message : String(error),
+  }));
+}
+
+function getRecoveryCopy(
+  recovery: SessionRecoverySummary | null,
+  fallbackType: RecoveryType,
+  fallbackDate: string | null
+): string | null {
+  const recoveryType = recovery?.recoveryType ?? fallbackType;
+  if (recoveryType === 'none') return null;
+
+  const repaired = recovery?.repairedDate ?? fallbackDate;
+  const dateLabel = repaired ? ` for ${repaired}` : '';
+
+  if (recoveryType === 'streak_patch') {
+    if (recovery?.recoveryStatus === 'completed') return `Streak Patch saved${dateLabel}`;
+    return `Streak Patch attempted${dateLabel}`;
+  }
+
+  if (recovery?.recoveryStatus === 'completed') return `Debt cleared${dateLabel}`;
+  if (recovery?.recoveryStatus === 'active' || recovery?.recoveryStatus === 'pending') {
+    return `Debt Set started${dateLabel}`;
+  }
+  return `Debt Set attempted${dateLabel}`;
 }
 
 const styles = StyleSheet.create({
@@ -396,12 +659,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
     textTransform: 'uppercase',
-  },
-  brand: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.4)',
-    letterSpacing: -0.5,
   },
   repBlock: {
     alignItems: 'center',
@@ -445,8 +702,16 @@ const styles = StyleSheet.create({
     borderColor: colors.streak,
   },
   badgePill: {
-    backgroundColor: '#3CB371',
-    borderColor: '#3CB371',
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+  recoveryPill: {
+    backgroundColor: colors.ice,
+    borderColor: colors.ice,
+  },
+  manualPill: {
+    backgroundColor: '#6F6F6F',
+    borderColor: '#6F6F6F',
   },
   pillText: {
     color: '#FFF',

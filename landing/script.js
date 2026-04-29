@@ -67,12 +67,12 @@ waitlistForm?.addEventListener("submit", (event) => {
   localStorage.setItem("just20LandingEmail", email);
 
   if (formStatus) {
-    formStatus.textContent = "Locked in. Your streak list spot is saved locally for this preview.";
+    formStatus.textContent = "Locked in. Your spot is saved for the first Just 20 squad.";
   }
 
   waitlistForm.reset();
 });
 
 if (localStorage.getItem("just20LandingEmail") && formStatus) {
-  formStatus.textContent = "You are already on the local preview list.";
+  formStatus.textContent = "You are already on the early squad list.";
 }

@@ -1,8 +1,8 @@
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, GestureResponderEvent, LayoutChangeEvent, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -16,6 +16,7 @@ import {
 import { useTensorflowModel } from 'react-native-fast-tflite';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
 import { useSharedValue, Worklets } from 'react-native-worklets-core';
+import { BrandLogo } from '../components/BrandLogo';
 import { RepCounter } from '../components/RepCounter';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import {
@@ -28,15 +29,25 @@ import {
   type Keypoint,
   type PushupPhase,
 } from '../lib/poseDetection';
-import { getFiredNudgeCountToday, getSetting, saveSession, setSetting } from '../lib/db';
+import {
+  getFiredNudgeCountToday,
+  getSetting,
+  saveSession,
+  setSetting,
+  type RecoveryType,
+  type TrackingMethod,
+  type WorkoutMode,
+} from '../lib/db';
 import {
   DEFAULT_SCHEDULED_HOUR,
   cancelAllNudges,
+  scheduleRandomNudges,
   scheduleWindowWithFallbackNudges,
   scheduleWindowedNotification,
 } from '../lib/notifications';
 import { markMonthlyTestTaken } from '../lib/viral';
 import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
+import { devLog } from '../lib/diagnostics';
 
 const STANDARD_TARGET = 20;
 const TEST_TARGET = 100;
@@ -44,17 +55,22 @@ const MIN_OVERLAY_SCORE = 0.2;
 const MODEL_INPUT_SIZE = 192;
 const PRIMARY_CROP_SCALE = 0.78;
 const SECONDARY_CROP_SCALE = 0.5;
+const PRIMARY_LOCK_LOST_MS = 900;
+const SECONDARY_INFERENCE_INTERVAL_MS = 220;
+const ACTIVE_REP_CONFIDENCE_MIN = 0.42;
+const TEST_REP_CONFIDENCE_MIN = 0.55;
+const REP_TRACKING_QUALITY_MIN = 0.38;
 
 const DEVICE_PERFORMANCE_CONFIG = {
   previewFps: 3,
-  activeFps: 10,
-  recoveryFps: 6,
+  activeFps: 12,
+  recoveryFps: 7,
   smoothingAlpha: 0.32,
 };
 
 const EMULATOR_PERFORMANCE_CONFIG = {
   previewFps: 1,
-  activeFps: 4,
+  activeFps: 5,
   recoveryFps: 2,
   smoothingAlpha: 0.32,
 };
@@ -96,6 +112,25 @@ type PoseOverlayFrame = {
 type OverlaySize = {
   width: number;
   height: number;
+};
+
+type ReadinessState =
+  | 'permission_needed'
+  | 'loading_model'
+  | 'camera_missing'
+  | 'waiting_for_frames'
+  | 'calibrating'
+  | 'ready'
+  | 'tracking_unstable'
+  | 'manual_mode';
+
+type ReadinessPanel = {
+  state: ReadinessState;
+  title: string;
+  detail: string;
+  action: string;
+  quality: number;
+  ready: boolean;
 };
 
 function PoseSkeleton({
@@ -258,16 +293,32 @@ export default function WorkoutScreen() {
     mode?: string;
     duelTarget?: string;
     duelCode?: string;
+    recoveryType?: string;
+    repairedDate?: string;
   }>();
   const { hasPermission, requestPermission } = useCameraPermission();
   const frontDevice = useCameraDevice('front');
   const backDevice = useCameraDevice('back');
   const device = frontDevice ?? backDevice;
   const usingFallbackCamera = !frontDevice && !!backDevice;
-  const workoutMode = params.mode === 'test' ? 'test' : params.mode === 'duel' ? 'duel' : 'daily';
+  const workoutMode: WorkoutMode = params.mode === 'test' ? 'test' : params.mode === 'duel' ? 'duel' : 'daily';
   const isTestMode = workoutMode === 'test';
   const isDuelMode = workoutMode === 'duel';
-  const targetReps = isTestMode ? TEST_TARGET : STANDARD_TARGET;
+  const requestedRecoveryType: RecoveryType =
+    params.recoveryType === 'streak_patch' || params.recoveryType === 'debt_set'
+      ? params.recoveryType
+      : 'none';
+  const recoveryType: RecoveryType = workoutMode === 'daily' ? requestedRecoveryType : 'none';
+  const repairedDate = typeof params.repairedDate === 'string' && params.repairedDate.length > 0
+    ? params.repairedDate
+    : null;
+  const targetReps = isTestMode
+    ? TEST_TARGET
+    : recoveryType === 'streak_patch'
+    ? 40
+    : recoveryType === 'debt_set'
+    ? 30
+    : STANDARD_TARGET;
   const duelTarget = Math.max(10, Number.parseInt(params.duelTarget ?? '60', 10) || 60);
   const performanceConfig = PERFORMANCE_CONFIG;
   const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
@@ -286,16 +337,26 @@ export default function WorkoutScreen() {
   const [secondaryPoseFrame, setSecondaryPoseFrame] = useState<PoseOverlayFrame | null>(null);
   const [overlaySize, setOverlaySize] = useState<OverlaySize>({ width: 0, height: 0 });
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [frameSeen, setFrameSeen] = useState(false);
+  const [cameraFrameTimedOut, setCameraFrameTimedOut] = useState(false);
   const [manualAdjustments, setManualAdjustments] = useState(0);
   const [manualAdjustmentCount, setManualAdjustmentCount] = useState(0);
-  const [showCalibration, setShowCalibration] = useState(false);
+  const [trackingMethod, setTrackingMethod] = useState<TrackingMethod>('camera');
+  const [cameraReadyMs, setCameraReadyMs] = useState<number | null>(null);
+  const [modelLoadMs, setModelLoadMs] = useState<number | null>(null);
   const [secondaryTrackingRequested, setSecondaryTrackingRequested] = useState(false);
   const [cameraPaused, setCameraPaused] = useState(false);
+  const [screenFocused, setScreenFocused] = useState(true);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
 
   const startTimeRef = useRef<number>(0);
   const finishedRef = useRef(false);
+  const finishingRef = useRef(false);
   const stopConfirmedRef = useRef(false);
   const milestoneClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const screenOpenedAtRef = useRef(Date.now());
+  const modelLoadStartRef = useRef(Date.now());
+  const cameraReadyLoggedRef = useRef(false);
 
   // Worklet-accessible shared state
   const wentDown = useSharedValue(false);
@@ -310,6 +371,8 @@ export default function WorkoutScreen() {
   const smoothedConfidence = useSharedValue(0);
   const secondarySmoothedElbowAngle = useSharedValue(0);
   const secondarySmoothedConfidence = useSharedValue(0);
+  const modelInputResizeDataType = useSharedValue<'uint8' | 'float32'>('uint8');
+  const repConfidenceMin = useSharedValue(isTestMode ? TEST_REP_CONFIDENCE_MIN : ACTIVE_REP_CONFIDENCE_MIN);
   const previewPoseFps = useSharedValue(PERFORMANCE_CONFIG.previewFps);
   const activePoseFps = useSharedValue(PERFORMANCE_CONFIG.activeFps);
   const recoveryPoseFps = useSharedValue(PERFORMANCE_CONFIG.recoveryFps);
@@ -318,14 +381,67 @@ export default function WorkoutScreen() {
   const primaryLocked = useSharedValue(false);
   const primaryCenterX = useSharedValue(0.5);
   const primaryCenterY = useSharedValue(0.5);
+  const primaryLostAt = useSharedValue(0);
   const secondaryEnabled = useSharedValue(false);
   const secondaryCenterX = useSharedValue(0.5);
   const secondaryCenterY = useSharedValue(0.5);
   const lastSecondaryPoseTime = useSharedValue(0);
+  const lastSecondaryInferenceTime = useSharedValue(0);
 
   useEffect(() => {
-    if (!hasPermission) requestPermission();
+    if (!hasPermission) {
+      devLog('camera_permission_requested');
+      requestPermission().then((granted) => {
+        if (!granted) devLog('camera_permission_denied');
+      });
+    }
   }, [hasPermission, requestPermission]);
+
+  useEffect(() => {
+    return () => {
+      if (milestoneClearRef.current) clearTimeout(milestoneClearRef.current);
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => {
+        setScreenFocused(false);
+        setCameraFrameTimedOut(false);
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const nextActive = nextState === 'active';
+      setAppActive(nextActive);
+      if (!nextActive) setCameraFrameTimedOut(false);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    setFrameSeen(false);
+    setCameraFrameTimedOut(false);
+  }, [device?.id]);
+
+  useEffect(() => {
+    if (!device || model.state !== 'loaded' || cameraError || finished || cameraPaused || !screenFocused || !appActive) {
+      setCameraFrameTimedOut(false);
+      return;
+    }
+
+    if (frameSeen) {
+      setCameraFrameTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setCameraFrameTimedOut(true), 8000);
+    return () => clearTimeout(timer);
+  }, [device, model.state, cameraError, finished, cameraPaused, screenFocused, appActive, frameSeen]);
 
   useEffect(() => {
     previewPoseFps.value = performanceConfig.previewFps;
@@ -333,6 +449,27 @@ export default function WorkoutScreen() {
     recoveryPoseFps.value = performanceConfig.recoveryFps;
     smoothingAlpha.value = performanceConfig.smoothingAlpha;
   }, [performanceConfig, previewPoseFps, activePoseFps, recoveryPoseFps, smoothingAlpha]);
+
+  useEffect(() => {
+    repConfidenceMin.value = isTestMode ? TEST_REP_CONFIDENCE_MIN : ACTIVE_REP_CONFIDENCE_MIN;
+  }, [isTestMode, repConfidenceMin]);
+
+  // MoveNet TFLite uses RGB [0,255]; avoid float buffers unless the loaded model requires them.
+  useEffect(() => {
+    if (model.state !== 'loaded') return;
+    const inputType = model.model.inputs[0]?.dataType;
+    modelInputResizeDataType.value = inputType === 'float32' ? 'float32' : 'uint8';
+  }, [model.state, model.model, modelInputResizeDataType]);
+
+  useEffect(() => {
+    if (model.state === 'loaded' && modelLoadMs === null) {
+      const elapsedMs = Date.now() - modelLoadStartRef.current;
+      setModelLoadMs(elapsedMs);
+      devLog('model_loaded', { elapsedMs });
+    } else if (model.state === 'error') {
+      devLog('model_load_failed');
+    }
+  }, [model.state, modelLoadMs]);
 
   // Elapsed timer — display only, starts from first rep
   useEffect(() => {
@@ -360,6 +497,16 @@ export default function WorkoutScreen() {
       fb: string,
       adjusted: boolean
     ) => {
+      setFrameSeen((seen) => {
+        if (!seen && !cameraReadyLoggedRef.current) {
+          cameraReadyLoggedRef.current = true;
+          const elapsedMs = Date.now() - screenOpenedAtRef.current;
+          setCameraReadyMs(elapsedMs);
+          devLog('camera_frames_ready', { elapsedMs });
+        }
+        return seen ? seen : true;
+      });
+      setCameraFrameTimedOut((timedOut) => (timedOut ? false : timedOut));
       setPoseFrame({
         keypoints: kps,
         phase,
@@ -478,6 +625,7 @@ export default function WorkoutScreen() {
         runAsync(frame, () => {
           'worklet';
         const inferenceStart = performance.now();
+        const now = Date.now();
         const primaryCrop = primaryLocked.value
           ? makeSquareCrop(frame.width, frame.height, primaryCenterX.value, primaryCenterY.value, PRIMARY_CROP_SCALE)
           : makeSquareCrop(frame.width, frame.height, 0.5, 0.5, 1);
@@ -485,7 +633,7 @@ export default function WorkoutScreen() {
           crop: primaryCrop,
           scale: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE },
           pixelFormat: 'rgb',
-          dataType: 'float32',
+          dataType: modelInputResizeDataType.value,
         });
 
         const outputs = loadedModel.runSync([resized]);
@@ -503,6 +651,7 @@ export default function WorkoutScreen() {
         const rawAnalysis = analyzePose(rawKps);
         const primaryBounds = getPoseBounds(kps, 0.25);
         if (primaryBounds && (rawAnalysis.bodyInFrame || rawAnalysis.confidence > 0.35)) {
+          primaryLostAt.value = 0;
           if (!primaryLocked.value) {
             primaryCenterX.value = primaryBounds.centerX;
             primaryCenterY.value = primaryBounds.centerY;
@@ -511,6 +660,16 @@ export default function WorkoutScreen() {
             primaryCenterY.value = primaryCenterY.value * 0.78 + primaryBounds.centerY * 0.22;
           }
           primaryLocked.value = true;
+        } else if (primaryLocked.value) {
+          if (primaryLostAt.value === 0) primaryLostAt.value = now;
+          if (now - primaryLostAt.value > PRIMARY_LOCK_LOST_MS) {
+            primaryLocked.value = false;
+            primaryLostAt.value = 0;
+            primaryCenterX.value = 0.5;
+            primaryCenterY.value = 0.5;
+            smoothedElbowAngle.value = 0;
+            smoothedConfidence.value = 0;
+          }
         }
 
         if (rawAnalysis.elbowAngle > 0 && rawAnalysis.confidence > 0) {
@@ -532,12 +691,16 @@ export default function WorkoutScreen() {
           smoothedConfidence.value
         );
         const { phase, feedback: fb, confidence, elbowAngle } = analysis;
-        const now = Date.now();
         const lastPoseAt = lastPoseTime.value;
         const updateFps = lastPoseAt > 0 ? Math.min(60, 1000 / Math.max(1, now - lastPoseAt)) : targetFps;
         const inferenceMs = performance.now() - inferenceStart;
+        const poseReliableForCounting =
+          confidence >= repConfidenceMin.value &&
+          analysis.trackingQuality >= REP_TRACKING_QUALITY_MIN &&
+          (analysis.bodyInFrame || confidence >= repConfidenceMin.value + 0.12);
 
-        if (secondaryEnabled.value) {
+        if (secondaryEnabled.value && now - lastSecondaryInferenceTime.value > SECONDARY_INFERENCE_INTERVAL_MS) {
+          lastSecondaryInferenceTime.value = now;
           const secondaryStart = performance.now();
           const secondaryCrop = makeSquareCrop(
             frame.width,
@@ -550,7 +713,7 @@ export default function WorkoutScreen() {
             crop: secondaryCrop,
             scale: { width: MODEL_INPUT_SIZE, height: MODEL_INPUT_SIZE },
             pixelFormat: 'rgb',
-            dataType: 'float32',
+            dataType: modelInputResizeDataType.value,
           });
           const secondaryOutputs = loadedModel.runSync([secondaryResized]);
           const secondaryRaw = secondaryOutputs[0] as Float32Array;
@@ -623,6 +786,30 @@ export default function WorkoutScreen() {
               updateFps,
               repCount.value,
               fb,
+              manuallyAdjusted.value
+            );
+          }
+          return;
+        }
+
+        if (!poseReliableForCounting) {
+          wentDown.value = false;
+          isKneeDrop.value = false;
+          if (now - lastPoseTime.value > 120) {
+            lastPoseTime.value = now;
+            onTrackingUpdate(
+              kps,
+              phase,
+              confidence,
+              elbowAngle,
+              analysis.calibration,
+              analysis.trackingQuality,
+              analysis.bodyInFrame,
+              targetFps,
+              inferenceMs,
+              updateFps,
+              repCount.value,
+              analysis.calibration,
               manuallyAdjusted.value
             );
           }
@@ -725,6 +912,8 @@ export default function WorkoutScreen() {
       smoothedConfidence,
       secondarySmoothedElbowAngle,
       secondarySmoothedConfidence,
+      modelInputResizeDataType,
+      repConfidenceMin,
       previewPoseFps,
       activePoseFps,
       recoveryPoseFps,
@@ -733,10 +922,12 @@ export default function WorkoutScreen() {
       primaryLocked,
       primaryCenterX,
       primaryCenterY,
+      primaryLostAt,
       secondaryEnabled,
       secondaryCenterX,
       secondaryCenterY,
       lastSecondaryPoseTime,
+      lastSecondaryInferenceTime,
       onTrackingUpdate,
       onSecondaryTrackingUpdate,
       onNoRep,
@@ -752,9 +943,21 @@ export default function WorkoutScreen() {
 
   function handleCameraError(error: CameraRuntimeError) {
     setCameraError(error.message);
+    devLog('camera_error', { message: error.message, code: error.code });
   }
 
-  function handleStart() {
+  function handleRetryCamera() {
+    setCameraError(null);
+    setFrameSeen(false);
+    setCameraFrameTimedOut(false);
+    setCameraPaused(false);
+    cameraReadyLoggedRef.current = false;
+    screenOpenedAtRef.current = Date.now();
+    handleCalibrate();
+    devLog('camera_retry_requested');
+  }
+
+  function handleStart(method: TrackingMethod = 'camera') {
     wentDown.value = false;
     lastDownTime.value = 0;
     repCount.value = 0;
@@ -762,25 +965,35 @@ export default function WorkoutScreen() {
     lastFeedbackTime.value = 0;
     isKneeDrop.value = false;
     lastPoseTime.value = 0;
+    primaryLostAt.value = 0;
+    lastSecondaryInferenceTime.value = 0;
     smoothedElbowAngle.value = 0;
     smoothedConfidence.value = 0;
     secondarySmoothedElbowAngle.value = 0;
     secondarySmoothedConfidence.value = 0;
     manuallyAdjusted.value = false;
     finishedRef.current = false;
+    finishingRef.current = false;
     prevRepsRef.current = 0;
     startTimeRef.current = 0;
     setReps(0);
     setFinished(false);
-    setCameraPaused(false);
+    setCameraPaused(method === 'manual');
     setStarted(true);
-    setCountdown(3);
+    setCountdown(method === 'manual' ? null : 3);
     setFirstRepTime(null);
     setElapsed(0);
     setRepTimestamps([]);
     setMilestoneMsg(null);
     setManualAdjustments(0);
     setManualAdjustmentCount(0);
+    setTrackingMethod(method);
+    setFeedback(method === 'manual' ? 'Manual mode: tap + rep after each clean pushup' : 'Get ready');
+    if (method === 'manual') {
+      startTimeRef.current = Date.now();
+      setFirstRepTime(Date.now());
+      devLog('manual_mode_started');
+    }
     // isStarted.value set after countdown reaches 0
   }
 
@@ -788,6 +1001,7 @@ export default function WorkoutScreen() {
     primaryLocked.value = false;
     primaryCenterX.value = 0.5;
     primaryCenterY.value = 0.5;
+    primaryLostAt.value = 0;
     smoothedElbowAngle.value = 0;
     smoothedConfidence.value = 0;
     secondaryEnabled.value = false;
@@ -796,9 +1010,9 @@ export default function WorkoutScreen() {
     secondarySmoothedElbowAngle.value = 0;
     secondarySmoothedConfidence.value = 0;
     lastSecondaryPoseTime.value = 0;
+    lastSecondaryInferenceTime.value = 0;
     setSecondaryPoseFrame(null);
     setSecondaryTrackingRequested(false);
-    setShowCalibration(true);
     setFeedback('Get into position');
     Haptics.selectionAsync();
   }
@@ -810,6 +1024,7 @@ export default function WorkoutScreen() {
     secondarySmoothedElbowAngle.value = 0;
     secondarySmoothedConfidence.value = 0;
     lastSecondaryPoseTime.value = 0;
+    lastSecondaryInferenceTime.value = 0;
     setSecondaryPoseFrame(null);
     setSecondaryTrackingRequested(false);
     Haptics.selectionAsync();
@@ -833,6 +1048,7 @@ export default function WorkoutScreen() {
     secondarySmoothedElbowAngle.value = 0;
     secondarySmoothedConfidence.value = 0;
     lastSecondaryPoseTime.value = 0;
+    lastSecondaryInferenceTime.value = 0;
     setSecondaryPoseFrame(null);
     setSecondaryTrackingRequested(true);
     Haptics.selectionAsync();
@@ -840,6 +1056,7 @@ export default function WorkoutScreen() {
 
   function handleManualRep(delta: number) {
     if (!started || countdown !== null || finished) return;
+    if (isTestMode) return;
 
     const next = Math.max(0, Math.min(targetReps, reps + delta));
     if (next === reps) return;
@@ -847,11 +1064,23 @@ export default function WorkoutScreen() {
     repCount.value = next;
     lastSentCount.value = next;
     lastFeedbackTime.value = Date.now();
-    manuallyAdjusted.value = true;
-    setManualAdjustments((current) => current + delta);
-    setManualAdjustmentCount((current) => current + 1);
+    if (trackingMethod === 'manual') {
+      setManualAdjustments(0);
+      setManualAdjustmentCount(0);
+    } else {
+      manuallyAdjusted.value = true;
+      setTrackingMethod('camera_adjusted');
+      setManualAdjustments((current) => current + delta);
+      setManualAdjustmentCount((current) => current + 1);
+    }
     setReps(next);
-    setFeedback(delta > 0 ? 'Rep added' : 'Rep removed');
+    setFeedback(
+      trackingMethod === 'manual'
+        ? `${next}/${targetReps} manually counted`
+        : delta > 0
+        ? 'Rep added'
+        : 'Rep removed'
+    );
     if (delta < 0) {
       prevRepsRef.current = next;
       setRepTimestamps((prev) => prev.slice(0, -1));
@@ -881,6 +1110,11 @@ export default function WorkoutScreen() {
       return;
     }
 
+    if (savedMode === 'random') {
+      await scheduleRandomNudges({ skipToday: true });
+      return;
+    }
+
     await cancelAllNudges();
   }
 
@@ -889,25 +1123,73 @@ export default function WorkoutScreen() {
     return startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
   }
 
+  function getFinalTrackingMethod(): TrackingMethod {
+    if (trackingMethod === 'manual') return 'manual';
+    return manualAdjustmentCount > 0 ? 'camera_adjusted' : 'camera';
+  }
+
+  function getSessionMetadata() {
+    return {
+      trackingMethod: getFinalTrackingMethod(),
+      manualAdjustments: manualAdjustmentCount,
+      trackingQuality: poseFrame?.trackingQuality ?? null,
+      cameraReadyMs,
+      modelLoadMs,
+      workoutMode,
+      targetReps,
+      recoveryType,
+      repairedDate,
+    };
+  }
+
   async function handleFinish() {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    setCameraPaused(true);
     isStarted.value = false;
-    const duration = getWorkoutDurationMs();
-    const nudgesUsed = await getFiredNudgeCountToday();
-    await saveSession(reps, duration);
-    if (isTestMode) await markMonthlyTestTaken();
-    if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
-    scheduleSharedJust20StatusUpdate();
-    router.replace({
-      pathname: '/completion',
-      params: {
-        reps: String(reps),
-        duration: String(duration),
-        nudgesUsed: String(nudgesUsed),
-        mode: workoutMode,
-        duelTarget: String(duelTarget),
-        manualAdjustments: String(manualAdjustmentCount),
-      },
-    });
+    try {
+      const duration = getWorkoutDurationMs();
+      const nudgesUsed = await getFiredNudgeCountToday();
+      const metadata = getSessionMetadata();
+      const sessionId = await saveSession(reps, duration, metadata);
+      if (isTestMode) await markMonthlyTestTaken();
+      if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
+      scheduleSharedJust20StatusUpdate();
+      devLog('workout_saved', {
+        reps,
+        duration,
+        trackingMethod: metadata.trackingMethod,
+        manualAdjustments: metadata.manualAdjustments,
+        trackingQuality: metadata.trackingQuality,
+      });
+      router.replace({
+        pathname: '/completion',
+        params: {
+          reps: String(reps),
+          duration: String(duration),
+          sessionId: String(sessionId ?? ''),
+          nudgesUsed: String(nudgesUsed),
+          mode: workoutMode,
+          duelTarget: String(duelTarget),
+          recoveryType,
+          repairedDate: repairedDate ?? '',
+          targetReps: String(targetReps),
+          manualAdjustments: String(manualAdjustmentCount),
+          trackingMethod: metadata.trackingMethod,
+          trackingQuality: String(metadata.trackingQuality ?? ''),
+          cameraReadyMs: String(cameraReadyMs ?? ''),
+          modelLoadMs: String(modelLoadMs ?? ''),
+        },
+      });
+    } catch (error) {
+      devLog('workout_save_failed', { message: error instanceof Error ? error.message : String(error) });
+      finishingRef.current = false;
+      finishedRef.current = false;
+      setFinished(false);
+      setCameraPaused(false);
+      isStarted.value = started && countdown === null;
+      Alert.alert('Could not save workout', 'Please try finishing again.');
+    }
   }
 
   function handleClose() {
@@ -928,12 +1210,21 @@ export default function WorkoutScreen() {
           style: 'destructive',
           onPress: async () => {
             stopConfirmedRef.current = true;
+            setCameraPaused(true);
             isStarted.value = false;
-            const duration = getWorkoutDurationMs();
-            await saveSession(reps, duration);
-            if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
-            scheduleSharedJust20StatusUpdate();
-            router.back();
+            try {
+              const duration = getWorkoutDurationMs();
+              await saveSession(reps, duration, getSessionMetadata());
+              if (reps >= STANDARD_TARGET) await clearCompletedWorkoutReminders();
+              scheduleSharedJust20StatusUpdate();
+              router.back();
+            } catch (error) {
+              devLog('workout_stop_save_failed', { message: error instanceof Error ? error.message : String(error) });
+              stopConfirmedRef.current = false;
+              setCameraPaused(false);
+              isStarted.value = started && countdown === null;
+              Alert.alert('Could not save workout', 'Please try ending the session again.');
+            }
           },
         },
       ], {
@@ -954,14 +1245,22 @@ export default function WorkoutScreen() {
     }
   }, [finished]);
 
-  if (!hasPermission) {
+  if (!hasPermission && trackingMethod !== 'manual') {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <Text style={styles.permText}>Camera permission needed</Text>
-          <TouchableOpacity style={styles.permBtn} onPress={requestPermission}>
+        <View style={styles.permissionCenter}>
+          <Text style={styles.permTitle}>Camera permission needed</Text>
+          <Text style={styles.permText}>
+            Just 20 counts reps on-device. If the camera is blocked, you can still save today manually for reduced XP.
+          </Text>
+          <TouchableOpacity style={styles.permBtn} onPress={requestPermission} activeOpacity={0.82}>
             <Text style={styles.permBtnText}>Allow Camera</Text>
           </TouchableOpacity>
+          {!isTestMode && (
+            <TouchableOpacity style={styles.manualFallbackLightBtn} onPress={() => handleStart('manual')} activeOpacity={0.78}>
+              <Text style={styles.manualFallbackLightText}>Count manually today</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -969,8 +1268,8 @@ export default function WorkoutScreen() {
 
   const modelReady = model.state === 'loaded';
   const modelError = model.state === 'error';
-  const startDisabled = !modelReady || modelError || !device || !!cameraError;
   const workoutActive = started && countdown === null && !finished;
+  const isCameraActive = trackingMethod !== 'manual' && !finished && !cameraPaused && screenFocused && appActive;
 
   const isBigCountdown = countdown !== null && countdown > 0;
   const isMilestone = countdown === null && !!milestoneMsg;
@@ -980,15 +1279,95 @@ export default function WorkoutScreen() {
         ? 'Go!'
         : String(countdown)
       : milestoneMsg ?? feedback;
-  const shouldShowCalibration = !!poseFrame && !started && (showCalibration || !poseFrame.bodyInFrame);
+  const readiness: ReadinessPanel = trackingMethod === 'manual'
+    ? {
+        state: 'manual_mode',
+        title: 'Manual count mode',
+        detail: 'Tap + rep after each clean pushup. This preserves the streak with reduced XP.',
+        action: 'Manual mode active',
+        quality: 1,
+        ready: true,
+      }
+    : modelError
+    ? {
+        state: 'loading_model',
+        title: 'Pose model failed',
+        detail: 'Close and reopen this screen. If it keeps happening, use manual count today and try camera tracking again later.',
+        action: 'Retry camera',
+        quality: 0,
+        ready: false,
+      }
+    : !device
+    ? {
+        state: 'camera_missing',
+        title: 'No camera found',
+        detail: 'Make sure camera access is available, then try again. You can still count manually today for reduced XP.',
+        action: 'Retry camera',
+        quality: 0,
+        ready: false,
+      }
+    : !!cameraError
+    ? {
+        state: 'camera_missing',
+        title: 'Camera unavailable',
+        detail: cameraError,
+        action: 'Retry camera',
+        quality: 0,
+        ready: false,
+      }
+    : !modelReady
+    ? {
+        state: 'loading_model',
+        title: 'Loading pose model',
+        detail: 'Warming up on-device MoveNet. No video leaves your phone.',
+        action: 'Loading...',
+        quality: 0.2,
+        ready: false,
+      }
+    : cameraFrameTimedOut || !frameSeen
+    ? {
+        state: 'waiting_for_frames',
+        title: 'Waiting for camera frames',
+        detail: 'If this is the emulator, restart it with webcam access. Real phones are more reliable.',
+        action: 'Waiting...',
+        quality: 0.3,
+        ready: false,
+      }
+    : poseFrame && !poseFrame.bodyInFrame
+    ? {
+        state: 'calibrating',
+        title: 'Calibrating camera',
+        detail: poseFrame.calibration,
+        action: 'Keep calibrating',
+        quality: poseFrame.trackingQuality,
+        ready: false,
+      }
+    : poseFrame && poseFrame.trackingQuality < REP_TRACKING_QUALITY_MIN
+    ? {
+        state: 'tracking_unstable',
+        title: 'Tracking is unstable',
+        detail: poseFrame.calibration || 'Improve lighting and keep shoulders, hands, and hips visible.',
+        action: 'Keep calibrating',
+        quality: poseFrame.trackingQuality,
+        ready: false,
+      }
+    : {
+        state: 'ready',
+        title: 'Ready to track',
+        detail: 'Body locked. Start when your full pushup position is visible.',
+        action: 'Ready',
+        quality: poseFrame?.trackingQuality ?? 1,
+        ready: true,
+      };
+  const startDisabled = trackingMethod !== 'manual' && !readiness.ready;
 
   return (
     <View style={styles.root}>
-      {device ? (
+      {device && hasPermission && trackingMethod !== 'manual' ? (
         <Camera
           style={StyleSheet.absoluteFill}
           device={device}
-          isActive={!finished && !cameraPaused}
+          isActive={isCameraActive}
           photo={false}
           video={false}
           audio={false}
@@ -998,8 +1377,14 @@ export default function WorkoutScreen() {
         />
       ) : (
         <View style={styles.cameraFallback}>
-          <Text style={styles.cameraFallbackTitle}>No camera found</Text>
-          <Text style={styles.cameraFallbackText}>Connect a camera or enable one in the emulator.</Text>
+          <Text style={styles.cameraFallbackTitle}>
+            {trackingMethod === 'manual' ? 'Manual count mode' : 'No camera found'}
+          </Text>
+          <Text style={styles.cameraFallbackText}>
+            {trackingMethod === 'manual'
+              ? 'Do clean reps and tap + rep after each one.'
+              : 'Connect a camera, use a real phone, or enable one in the emulator.'}
+          </Text>
         </View>
       )}
 
@@ -1017,16 +1402,22 @@ export default function WorkoutScreen() {
 
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
-          <Text style={styles.title}>just20</Text>
+          <BrandLogo size="sm" />
           {started && firstRepTime !== null && (
             <View style={styles.timerWrap}>
               <Text style={styles.timerText}>{formatElapsed(elapsed)}</Text>
             </View>
           )}
-          {workoutMode !== 'daily' && (
+          {(workoutMode !== 'daily' || recoveryType !== 'none') && (
             <View style={styles.modePill}>
               <Text style={styles.modePillText}>
-                {isTestMode ? 'TEST ME' : `DUEL ${duelTarget}s`}
+                {isTestMode
+                  ? 'TEST ME'
+                  : recoveryType === 'streak_patch'
+                  ? 'STREAK PATCH 40'
+                  : recoveryType === 'debt_set'
+                  ? 'DEBT SET 30'
+                  : `DUEL ${duelTarget}s`}
               </Text>
             </View>
           )}
@@ -1053,19 +1444,34 @@ export default function WorkoutScreen() {
               </Text>
             </View>
           )}
-          {shouldShowCalibration && (
-            <View style={styles.calibrationCard}>
-              <Text style={styles.calibrationTitle}>
-                {poseFrame.bodyInFrame ? 'Ready to track' : 'Calibrating camera'}
-              </Text>
-              <Text style={styles.calibrationText}>{poseFrame.calibration}</Text>
+          {!started && (
+            <View style={[
+              styles.readinessCard,
+              readiness.ready && styles.readinessCardReady,
+              readiness.state === 'manual_mode' && styles.readinessCardManual,
+            ]}>
+              <Text style={styles.readinessEyebrow}>Tracking check</Text>
+              <Text style={styles.readinessTitle}>{readiness.title}</Text>
+              <Text style={styles.readinessText}>{readiness.detail}</Text>
               <View style={styles.qualityTrack}>
                 <View
                   style={[
                     styles.qualityFill,
-                    { width: `${Math.round(poseFrame.trackingQuality * 100)}%` },
+                    readiness.ready && styles.qualityFillReady,
+                    readiness.state === 'manual_mode' && styles.qualityFillManual,
+                    { width: `${Math.round(readiness.quality * 100)}%` },
                   ]}
                 />
+              </View>
+              <View style={styles.readinessStatusRow}>
+                <Text style={styles.readinessStatus}>
+                  {readiness.ready ? 'Ready' : readiness.action}
+                </Text>
+                {readiness.state !== 'ready' && readiness.state !== 'manual_mode' && (
+                  <TouchableOpacity onPress={handleRetryCamera} activeOpacity={0.75}>
+                    <Text style={styles.readinessRetry}>Retry</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
@@ -1096,6 +1502,20 @@ export default function WorkoutScreen() {
           {cameraError && (
             <Text style={styles.cameraNote}>{cameraError}</Text>
           )}
+          {cameraFrameTimedOut && !cameraError && (
+            <Text style={styles.cameraNote}>
+              Camera opened, but no frames are arriving. Restart the Android simulator with webcam access enabled.
+            </Text>
+          )}
+          {!started && !isTestMode && trackingMethod !== 'manual' && !readiness.ready && (
+            <TouchableOpacity
+              style={styles.manualFallbackBtn}
+              onPress={() => handleStart('manual')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.manualFallbackText}>Count manually today · reduced XP</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.bottom}>
@@ -1123,7 +1543,7 @@ export default function WorkoutScreen() {
               {workoutActive && repTimestamps.length >= 2 && (
                 <PaceGraph timestamps={repTimestamps} />
               )}
-              {workoutActive && (
+              {workoutActive && !isTestMode && (
                 <View style={styles.adjustRow}>
                   <TouchableOpacity
                     onPress={() => handleManualRep(-1)}
@@ -1151,7 +1571,14 @@ export default function WorkoutScreen() {
                   <Text style={styles.finishTestText}>finish monthly test →</Text>
                 </TouchableOpacity>
               )}
-              {manualAdjustments !== 0 && (
+              {trackingMethod === 'manual' && (
+                <Text style={styles.manualNote}>
+                  {recoveryType === 'none'
+                    ? 'manual count mode · reduced XP'
+                    : 'manual recovery count · reduced recovery XP'}
+                </Text>
+              )}
+              {trackingMethod !== 'manual' && manualAdjustments !== 0 && (
                 <Text style={styles.manualNote}>
                   manual adjustment {manualAdjustments > 0 ? '+' : ''}{manualAdjustments}
                 </Text>
@@ -1159,19 +1586,11 @@ export default function WorkoutScreen() {
               {!started && (
                 <TouchableOpacity
                   style={[styles.startBtn, startDisabled && styles.startBtnDisabled]}
-                  onPress={handleStart}
+                  onPress={() => handleStart('camera')}
                   disabled={startDisabled}
                 >
                   <Text style={styles.startBtnText}>
-                    {!device
-                      ? 'No camera found'
-                      : cameraError
-                      ? 'Camera unavailable'
-                      : modelError
-                      ? 'Model failed to load'
-                      : modelReady
-                      ? 'START'
-                      : 'Loading model…'}
+                    {readiness.ready ? 'START' : readiness.action}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1235,6 +1654,13 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   overlay: { flex: 1, justifyContent: 'space-between', zIndex: 3 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.lg },
+  permissionCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -1242,7 +1668,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
   },
-  title: { fontSize: 24, fontWeight: '900', color: '#FFF', letterSpacing: -0.5 },
   timerWrap: { position: 'absolute', left: spacing.lg, top: spacing.md, padding: spacing.sm },
   timerText: {
     fontSize: fontSize.sm,
@@ -1301,7 +1726,7 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: '800',
   },
-  calibrationCard: {
+  readinessCard: {
     width: '100%',
     maxWidth: 360,
     marginTop: spacing.md,
@@ -1312,13 +1737,29 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.xs,
   },
-  calibrationTitle: {
+  readinessCardReady: {
+    borderColor: 'rgba(88,204,2,0.44)',
+    backgroundColor: 'rgba(9,58,13,0.66)',
+  },
+  readinessCardManual: {
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(32,32,32,0.72)',
+  },
+  readinessEyebrow: {
+    color: 'rgba(255,255,255,0.52)',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  readinessTitle: {
     color: '#FFF',
     fontSize: fontSize.sm,
     fontWeight: '900',
     textAlign: 'center',
   },
-  calibrationText: {
+  readinessText: {
     color: 'rgba(255,255,255,0.78)',
     fontSize: fontSize.xs,
     fontWeight: '700',
@@ -1335,6 +1776,30 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.full,
     backgroundColor: colors.success,
+  },
+  qualityFillReady: {
+    backgroundColor: colors.success,
+  },
+  qualityFillManual: {
+    backgroundColor: colors.streak,
+  },
+  readinessStatusRow: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  readinessStatus: {
+    color: 'rgba(255,255,255,0.74)',
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+  },
+  readinessRetry: {
+    color: '#FFFFFF',
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    textDecorationLine: 'underline',
   },
   calibrationBtn: {
     marginTop: spacing.sm,
@@ -1380,13 +1845,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  manualFallbackBtn: {
+    marginTop: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  manualFallbackText: {
+    color: colors.text,
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+  },
   bottom: {
     backgroundColor: 'rgba(0,0,0,0.65)',
-    padding: spacing.xl,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
     alignItems: 'center',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderRadius: 24,
   },
   dots: {
     flexDirection: 'row',
@@ -1422,6 +1902,8 @@ const styles = StyleSheet.create({
   adjustRow: {
     flexDirection: 'row',
     gap: spacing.sm,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   adjustBtn: {
     minWidth: 92,
@@ -1461,9 +1943,12 @@ const styles = StyleSheet.create({
   startBtn: {
     backgroundColor: '#FFF',
     borderRadius: radius.md,
-    paddingHorizontal: spacing.xxl,
+    width: '100%',
+    maxWidth: 280,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     marginTop: spacing.sm,
+    alignItems: 'center',
   },
   startBtnDisabled: { backgroundColor: colors.disabled },
   startBtnText: { fontSize: fontSize.lg, fontWeight: '900', color: colors.text, letterSpacing: 1 },
@@ -1476,7 +1961,14 @@ const styles = StyleSheet.create({
   },
   finishedBanner: { paddingVertical: spacing.lg, alignItems: 'center' },
   finishedText: { fontSize: fontSize.xl, fontWeight: '900', color: '#FFF' },
-  permText: { fontSize: fontSize.md, color: colors.text },
+  permTitle: { fontSize: fontSize.lg, color: colors.text, fontWeight: '900', textAlign: 'center' },
+  permText: {
+    fontSize: fontSize.md,
+    color: colors.subtext,
+    fontWeight: '600',
+    lineHeight: 22,
+    textAlign: 'center',
+  },
   permBtn: {
     backgroundColor: colors.text,
     borderRadius: radius.md,
@@ -1484,4 +1976,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   permBtnText: { color: '#FFF', fontWeight: '700', fontSize: fontSize.md },
+  manualFallbackLightBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  manualFallbackLightText: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+    textDecorationLine: 'underline',
+  },
 });

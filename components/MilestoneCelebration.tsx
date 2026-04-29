@@ -8,7 +8,7 @@ import { MILESTONE_COPY } from '../lib/milestones';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedView = Animated.View as any;
 
-const CONFETTI_COLORS = ['#FF6B35', '#FF4D4D', '#3CB371', '#5BC4F5', '#FFD700'];
+const CONFETTI_COLORS = [colors.streak, colors.accent, colors.brand, colors.ice, colors.yellow];
 const PARTICLE_COUNT = 18;
 
 type Props = {

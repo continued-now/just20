@@ -1,24 +1,31 @@
 {
-  "name": "just20-jake",
+  "name": "just20",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
+    "android:device": "bash scripts/android-device.sh",
     "android:webcam": "bash scripts/android-webcam.sh",
     "ios": "expo run:ios",
     "landing": "python3 -m http.server 8082 --directory landing",
     "landing2": "python3 -m http.server 8083 --directory landing2",
     "badges:mockups": "python3 -m http.server 8084 --directory badge-mockups",
+    "logos:mockups": "python3 -m http.server 8085 --directory logo-mockups",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "lint": "expo lint app components hooks lib --no-cache",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node --no-warnings --test tests/*.test.mjs",
     "check:native-config": "node scripts/check-native-config.js",
-    "verify": "npm run typecheck && npm run check:native-config && npx expo-doctor"
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run check:native-config && npx expo-doctor"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "expo": "~54.0.34",
     "expo-constants": "~18.0.13",
+    "expo-dev-client": "~6.0.21",
     "expo-font": "~14.0.11",
     "expo-haptics": "~15.0.8",
     "expo-linking": "~8.0.12",
@@ -48,6 +55,9 @@
   "devDependencies": {
     "@types/react": "~19.1.10",
     "babel-preset-expo": "~54.0.10",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "~10.0.0",
+    "prettier": "^3.8.3",
     "typescript": "~5.9.2"
   },
   "expo": {

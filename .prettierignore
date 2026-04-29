@@ -1,0 +1,9 @@
+node_modules
+.expo
+android
+ios
+artifacts
+outputs
+*.png
+*.webp
+*.xlsx

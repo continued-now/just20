@@ -7,12 +7,15 @@ import {
   getCompletedDaysThisWeek,
   getSetting,
   getStreak,
+  hasProcessedBadgeEvent,
   incrementBadgeCounter,
   incrementBadgeShareCount,
   insertBadgeUnlock,
+  markBadgeEventProcessed,
   setBadgeCounter,
   type BadgeUnlock,
 } from './db';
+import { buildSharePayload } from './growth';
 
 export type BadgeCategory = 'streak' | 'social' | 'performance' | 'consistency';
 export type BadgeVisibility = 'visible' | 'hidden';
@@ -40,8 +43,10 @@ export type BadgeEventContext = {
   reps?: number;
   durationMs?: number;
   mode?: 'daily' | 'duel' | 'test';
+  trackingMethod?: 'camera' | 'camera_adjusted' | 'manual';
   manualAdjustments?: number;
   nudgesUsed?: number;
+  eventId?: string;
   backendVerified?: boolean;
 };
 
@@ -268,7 +273,7 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
     visibility: 'hidden',
     sortOrder: 140,
     backendRequired: true,
-    blockedLabel: 'Referral completion attribution required',
+    blockedLabel: 'Referral tracking is coming soon',
   }),
   badge({
     id: 'pack_starter',
@@ -284,7 +289,7 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
     visibility: 'visible',
     sortOrder: 150,
     backendRequired: true,
-    blockedLabel: 'Live room joins need backend rooms',
+    blockedLabel: 'Live room joins are coming soon',
   }),
   badge({
     id: 'room_captain',
@@ -300,7 +305,7 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
     visibility: 'hidden',
     sortOrder: 160,
     backendRequired: true,
-    blockedLabel: 'Live room joins need backend rooms',
+    blockedLabel: 'Live room joins are coming soon',
   }),
   badge({
     id: 'nudge_goblin',
@@ -495,7 +500,7 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
     category: 'consistency',
     name: 'No Nudge Needed',
     description: 'You showed up before the app had to tap the glass.',
-    requirement: 'Complete before any fallback nudge fires 5 times.',
+    requirement: 'Complete before any backup nudge fires 5 times.',
     xp: 180,
     icon: '🔕',
     color: '#E8F8DF',
@@ -512,7 +517,7 @@ async function updateBadgeCountersForEvent(context: BadgeEventContext): Promise<
   const isWorkoutCompletion = context.event === 'workout_completed' && completedSet;
 
   if (isWorkoutCompletion) {
-    const clean = context.manualAdjustments === 0;
+    const clean = (context.trackingMethod ?? 'camera') === 'camera' && context.manualAdjustments === 0;
     if (clean) {
       await Promise.all([
         incrementBadgeCounter('clean_sessions_total'),
@@ -541,7 +546,7 @@ async function updateBadgeCountersForEvent(context: BadgeEventContext): Promise<
     }
 
     const durationMs = context.durationMs ?? 0;
-    if (durationMs > 0) {
+    if ((context.trackingMethod ?? 'camera') !== 'manual' && durationMs > 0) {
       const priorBest = await getCounter('best_20_time_ms');
       if (priorBest > 0 && durationMs < priorBest) {
         await incrementBadgeCounter('speed_pb_count');
@@ -716,7 +721,7 @@ export async function getBadgeCollection(
         target,
         percent,
         progressLabel: backendBlocked
-          ? definition.blockedLabel ?? 'Backend verification required'
+          ? definition.blockedLabel ?? 'Live tracking is coming soon'
           : badgeProgress.progressLabel,
         hiddenUntilUnlocked: definition.visibility === 'hidden' && !unlock,
         canUnlockNow: !backendBlocked && !unlock && badgeProgress.canUnlockNow,
@@ -728,6 +733,11 @@ export async function getBadgeCollection(
 export async function evaluateBadgeUnlocks(
   context: BadgeEventContext = {}
 ): Promise<BadgeUnlockResult[]> {
+  const eventId = context.eventId?.trim();
+  if (eventId && await hasProcessedBadgeEvent(eventId)) {
+    return [];
+  }
+
   await updateBadgeCountersForEvent(context);
   const collection = await getBadgeCollection(context);
   const newlyUnlocked: BadgeUnlockResult[] = [];
@@ -750,6 +760,10 @@ export async function evaluateBadgeUnlocks(
     });
   }
 
+  if (eventId) {
+    await markBadgeEventProcessed(eventId, context.event ?? 'unknown');
+  }
+
   return newlyUnlocked;
 }
 
@@ -758,6 +772,11 @@ export async function markBadgeShared(badgeId: string): Promise<void> {
 }
 
 export function buildBadgeBragText(badge: BadgeDefinition, inviteCode?: string | null): string {
-  const inviteLine = inviteCode ? `\n\nJoin me: ${inviteCode}` : '';
-  return `I unlocked "${badge.name}" on Just20.\n${badge.description}\n\n+${badge.xp} XP${inviteLine}\n#just20`;
+  return buildSharePayload('badge', {
+    inviteCode,
+    badgeName: badge.name,
+    badgeDescription: badge.description,
+    badgeXp: badge.xp,
+    source: 'badge',
+  }).message;
 }

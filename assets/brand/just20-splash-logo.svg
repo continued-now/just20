@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1152 1152" role="img" aria-label="Just 20">
+  <defs>
+    <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#78D943"/>
+      <stop offset="1" stop-color="#43A300"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="34" stdDeviation="28" flood-color="#21321E" flood-opacity=".18"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="198" y="422" width="756" height="306" rx="153" fill="url(#track)"/>
+    <rect x="229" y="453" width="694" height="244" rx="122" fill="none" stroke="#DCFFB9" stroke-width="22" opacity=".56"/>
+    <text x="300" y="609" fill="#F5FFE8" font-family="Nunito, Arial Rounded MT Bold, Arial, sans-serif" font-size="132" font-weight="900" letter-spacing="-10">just</text>
+    <path d="M315 658 H505" fill="none" stroke="#DCFFB9" stroke-width="19" stroke-linecap="round" opacity=".55"/>
+    <circle cx="775" cy="575" r="136" fill="#FFFDF2"/>
+    <circle cx="775" cy="575" r="111" fill="#F7FFE9" stroke="#DFE9D3" stroke-width="13"/>
+    <path d="M695 666 C738 700 812 700 855 666" fill="none" stroke="#58CC02" stroke-width="20" stroke-linecap="round" opacity=".72"/>
+    <text x="775" y="618" text-anchor="middle" fill="#3F9700" font-family="Nunito, Arial Rounded MT Bold, Arial, sans-serif" font-size="92" font-weight="900">20</text>
+  </g>
+</svg>

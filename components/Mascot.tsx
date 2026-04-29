@@ -7,6 +7,7 @@ import {
   STREAK_TIERS,
   type StreakTierInfo,
 } from '../lib/mascotState';
+import { colors } from '../constants/theme';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedView = Animated.View as any;
 
@@ -22,12 +23,12 @@ const MOOD_EMOJI: Record<MascotMood, string> = {
 };
 
 const MOOD_BG: Record<MascotMood, string> = {
-  sleeping: '#E8E8E0',
-  neutral: '#E8E8E0',
-  annoyed: '#FFE5B4',
+  sleeping: colors.border,
+  neutral: colors.border,
+  annoyed: colors.streakSoft,
   angry: '#FFCDD2',
   furious: '#FF8A80',
-  celebrating: '#C8E6C9',
+  celebrating: colors.successSoft,
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 12,
     width: 24,
     height: 24,

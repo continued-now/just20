@@ -3,6 +3,7 @@ import { getOrCreateUser } from './user';
 import { getBuddyLinks, getBuddyLink, addBuddyLink } from './db';
 import { localDayKey } from './dates';
 import { evaluateBadgeUnlocks } from './badges';
+import { validateInviteCode } from './validation';
 
 export type BuddyStatus = {
   username: string;
@@ -37,8 +38,11 @@ export async function linkBuddy(rawCode: string): Promise<{
   username: string | null;
   error?: string;
 }> {
-  const code = rawCode.toUpperCase().trim();
-  if (!code) return { success: false, username: null, error: 'Enter a code first.' };
+  const validation = validateInviteCode(rawCode);
+  if (validation.error || !validation.code) {
+    return { success: false, username: null, error: validation.error ?? 'Use a valid Just 20 invite code.' };
+  }
+  const code = validation.code;
 
   // Don't link yourself
   const me = await getOrCreateUser();

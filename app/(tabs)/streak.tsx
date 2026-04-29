@@ -16,9 +16,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { STREAK_TIERS, getTierInfo } from '../../components/Mascot';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { isChestAvailable } from '../../lib/coins';
-import { getCalendarData, getCoins, getStreak, getUserProfile } from '../../lib/db';
+import {
+  getCalendarData,
+  getCoins,
+  getRecoveryCalendarData,
+  getStreak,
+  getUserProfile,
+  type RecoveryType,
+} from '../../lib/db';
 import { localDayKey, localDaysBetween } from '../../lib/dates';
+import { buildSharePayload, growthEventFromPayload, recordGrowthEvent } from '../../lib/growth';
 import { MILESTONE_DAYS, getNextMilestone } from '../../lib/milestones';
+import { getEquippedCosmetics, getFlameStyle, type FlameStyleId } from '../../lib/shop';
 import { getXp } from '../../lib/xp';
 
 type StreakData = {
@@ -28,11 +37,13 @@ type StreakData = {
   freezeCount: number;
   lastCompletedDate: string | null;
   calendar: Record<string, boolean>;
+  recoveryCalendar: Record<string, RecoveryType>;
   coinBalance: number;
   xpBalance: number;
   chestReady: boolean;
   inviteCode: string | null;
   username: string | null;
+  flameStyle: FlameStyleId | null;
 };
 
 type WeekDay = {
@@ -40,6 +51,7 @@ type WeekDay = {
   label: string;
   dateLabel: string;
   done: boolean;
+  recoveryType: RecoveryType;
   isToday: boolean;
 };
 
@@ -92,32 +104,46 @@ export default function StreakScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      async function load() {
-        const [streak, cal, coins, xp, chestReady, profile] = await Promise.all([
-          getStreak(),
-          getCalendarData(42),
-          getCoins(),
-          getXp(),
-          isChestAvailable(),
-          getUserProfile(),
-        ]);
+      let active = true;
 
-        setData({
-          current: streak.current,
-          best: streak.best,
-          totalSessions: streak.totalSessions,
-          freezeCount: streak.freezeCount,
-          lastCompletedDate: streak.lastCompletedDate,
-          calendar: cal,
-          coinBalance: coins.balance,
-          xpBalance: xp.balance,
-          chestReady,
-          inviteCode: profile?.inviteCode ?? null,
-          username: profile?.username ?? null,
-        });
+      async function load() {
+        try {
+          const [streak, cal, recoveryCal, coins, xp, chestReady, profile, equipped] = await Promise.all([
+            getStreak(),
+            getCalendarData(42),
+            getRecoveryCalendarData(42),
+            getCoins(),
+            getXp(),
+            isChestAvailable(),
+            getUserProfile(),
+            getEquippedCosmetics(),
+          ]);
+
+          if (!active) return;
+          setData({
+            current: streak.current,
+            best: streak.best,
+            totalSessions: streak.totalSessions,
+            freezeCount: streak.freezeCount,
+            lastCompletedDate: streak.lastCompletedDate,
+            calendar: cal,
+            recoveryCalendar: recoveryCal,
+            coinBalance: coins.balance,
+            xpBalance: xp.balance,
+            chestReady,
+            inviteCode: profile?.inviteCode ?? null,
+            username: profile?.username ?? null,
+            flameStyle: equipped.flameStyle,
+          });
+        } catch {
+          if (active) setData(null);
+        }
       }
 
       load();
+      return () => {
+        active = false;
+      };
     }, [])
   );
 
@@ -133,7 +159,7 @@ export default function StreakScreen() {
   const nextMilestone = getNextMilestone(current);
   const milestoneTarget = nextMilestone?.days ?? MILESTONE_DAYS[MILESTONE_DAYS.length - 1];
   const nextTier = getTierInfo(current);
-  const week = buildWeek(data?.calendar ?? {});
+  const week = buildWeek(data?.calendar ?? {}, data?.recoveryCalendar ?? {});
   const weekDoneCount = week.filter(day => day.done).length;
   const monthDoneCount = Object.values(data?.calendar ?? {}).filter(Boolean).length;
   const perfectWeekProgress = Math.min((weekDoneCount / PERFECT_WEEK_TARGET) * 100, 100);
@@ -141,21 +167,23 @@ export default function StreakScreen() {
   const hoursLeft = getHoursUntilMidnight();
   const streakLeague = getStreakLeague(current);
   const selected = selectedDay ?? week[week.length - 1];
+  const flameVisual = getFlameStyle(data?.flameStyle);
 
   async function handleShare() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const inviteLine = data?.inviteCode ? `\nMy code: ${data.inviteCode}` : '';
-    const name = data?.username ? `${data.username} is` : "I'm";
-    const dayLine = current > 0
-      ? `${name} on a ${current}-day Just20 streak. 20 pushups a day. No negotiations.`
-      : "I'm starting a Just20 streak. 20 pushups a day. Hold me to it.";
-
+    const payload = buildSharePayload('streak', {
+      inviteCode: data?.inviteCode,
+      streakDays: current,
+      source: 'streak',
+    });
     try {
-      await Share.share({
-        message: `${dayLine}${inviteLine}\n\nTry to catch me. #just20`,
-      });
-    } catch {
-      // Share sheets can be dismissed; nothing to recover from.
+      await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface: 'streak_center' }));
+      await Share.share({ message: payload.message, title: payload.title });
+    } catch (error) {
+      await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
+        surface: 'streak_center',
+        message: error instanceof Error ? error.message : String(error),
+      }));
     }
   }
 
@@ -173,7 +201,7 @@ export default function StreakScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View>
+          <View style={styles.headerTitleWrap}>
             <Text style={styles.eyebrow}>STREAK CENTER</Text>
             <Text style={styles.heading}>Keep the flame alive.</Text>
           </View>
@@ -181,26 +209,40 @@ export default function StreakScreen() {
             <View style={styles.xpPill}>
               <Text style={styles.xpText}>XP {data?.xpBalance ?? 0}</Text>
             </View>
-            <View style={styles.coinPill}>
+            <TouchableOpacity
+              style={styles.coinPill}
+              onPress={() => router.push('/xp-shop' as any)}
+              activeOpacity={0.8}
+            >
               <Text style={styles.coinText}>🪙 {data?.coinBalance ?? 0}</Text>
-            </View>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.badgesPill} onPress={() => router.push('/badges' as any)} activeOpacity={0.82}>
               <Text style={styles.badgesText}>Badges</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <View style={[styles.hero, streakIsAtRisk && styles.heroDanger, completedToday && styles.heroSafe]}>
+        <View
+          style={[
+            styles.hero,
+            { backgroundColor: flameVisual.heroBg, borderColor: flameVisual.borderColor },
+            streakIsAtRisk && styles.heroDanger,
+            completedToday && styles.heroSafe,
+          ]}
+        >
           <Animated.View
             style={[
               styles.flameAura,
               {
+                backgroundColor: flameVisual.auraColor,
                 opacity: flameGlow.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.55] }),
                 transform: [{ scale: flameScale }],
               },
             ]}
           />
-          <Animated.Text style={[styles.flame, { transform: [{ scale: flameScale }] }]}>🔥</Animated.Text>
+          <Animated.Text style={[styles.flame, { transform: [{ scale: flameScale }] }]}>
+            {flameVisual.emoji}
+          </Animated.Text>
           <Text style={styles.streakNum}>{current}</Text>
           <Text style={styles.streakLabel}>{current === 1 ? 'day streak' : 'day streak'}</Text>
           <Text style={styles.heroSub}>{getHeroCopy(current, completedToday, freezeCanSaveToday, hoursLeft)}</Text>
@@ -266,12 +308,18 @@ export default function StreakScreen() {
                   style={[
                     styles.dayRing,
                     day.done && styles.dayRingDone,
+                    day.recoveryType !== 'none' && styles.dayRingPatched,
                     day.isToday && !day.done && styles.dayRingToday,
                     selected?.key === day.key && styles.dayRingSelected,
                   ]}
                 >
-                  <Text style={[styles.dayRingText, day.done && styles.dayRingTextDone]}>
-                    {day.done ? '✓' : day.isToday ? '!' : '•'}
+                  <Text
+                    style={[
+                      styles.dayRingText,
+                      (day.done || day.recoveryType !== 'none') && styles.dayRingTextDone,
+                    ]}
+                  >
+                    {day.recoveryType !== 'none' ? 'P' : day.done ? '✓' : day.isToday ? '!' : '•'}
                   </Text>
                 </View>
                 <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>{day.label}</Text>
@@ -288,6 +336,8 @@ export default function StreakScreen() {
             <Text style={styles.dayDetailText}>
               {selected.done
                 ? 'Stamped. This day is part of the streak story.'
+                : selected.recoveryType !== 'none'
+                ? 'Patched day. Active streak saved, but clean-streak badges still know the truth.'
                 : selected.isToday
                 ? 'Today is open. Finish 20 and make the ring glow.'
                 : 'Missed days are visible by design. The calendar should make quitting annoying.'}
@@ -380,6 +430,7 @@ export default function StreakScreen() {
               d.setDate(d.getDate() - (41 - i));
               const key = localDayKey(d);
               const done = data?.calendar[key] ?? false;
+              const patched = (data?.recoveryCalendar[key] ?? 'none') !== 'none';
               const isToday = key === today;
               return (
                 <View
@@ -387,6 +438,7 @@ export default function StreakScreen() {
                   style={[
                     styles.heatCell,
                     done && styles.heatCellDone,
+                    patched && styles.heatCellPatched,
                     isToday && !done && styles.heatCellToday,
                   ]}
                 />
@@ -406,7 +458,10 @@ export default function StreakScreen() {
   );
 }
 
-function buildWeek(calendar: Record<string, boolean>): WeekDay[] {
+function buildWeek(
+  calendar: Record<string, boolean>,
+  recoveryCalendar: Record<string, RecoveryType>
+): WeekDay[] {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
@@ -416,6 +471,7 @@ function buildWeek(calendar: Record<string, boolean>): WeekDay[] {
       label: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3),
       dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       done: calendar[key] ?? false,
+      recoveryType: recoveryCalendar[key] ?? 'none',
       isToday: i === 6,
     };
   });
@@ -451,7 +507,7 @@ function getStreakLeague(streak: number): { emoji: string; name: string; copy: s
   if (streak >= 14) return { emoji: '🔥', name: 'Habit Locked', copy: 'Two weeks is where streaks start feeling expensive to lose.' };
   if (streak >= 7) return { emoji: '🧊', name: 'Freeze Earner', copy: 'You crossed the first real line. Now the game has protection.' };
   if (streak > 0) return { emoji: '✨', name: 'Spark Run', copy: 'Small streaks are fragile. That is exactly why they work.' };
-  return { emoji: '🎯', name: 'Unlit', copy: 'The viral loop starts after the first public win.' };
+  return { emoji: '🎯', name: 'Unlit', copy: 'Light the first spark with one clean set.' };
 }
 
 function MiniStatus({ tone, label, value }: { tone: 'safe' | 'danger' | 'ice' | 'reward' | 'neutral'; label: string; value: string }) {
@@ -484,13 +540,14 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
+  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl + spacing.xl },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: spacing.md,
   },
+  headerTitleWrap: { flex: 1, minWidth: 0 },
   eyebrow: {
     fontSize: fontSize.xs,
     fontWeight: '900',
@@ -503,10 +560,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -1.1,
     marginTop: 2,
+    flexShrink: 1,
   },
   currencyStack: {
     alignItems: 'flex-end',
     gap: spacing.xs,
+    flexShrink: 0,
   },
   xpPill: {
     backgroundColor: '#171717',
@@ -525,7 +584,7 @@ const styles = StyleSheet.create({
   },
   coinText: { fontSize: fontSize.sm, fontWeight: '900', color: '#9B6500' },
   badgesPill: {
-    backgroundColor: '#FFF0E8',
+    backgroundColor: colors.streakSoft,
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -554,7 +613,7 @@ const styles = StyleSheet.create({
   },
   heroSafe: {
     backgroundColor: '#10251A',
-    borderColor: '#3CB371',
+    borderColor: colors.brand,
   },
   flameAura: {
     position: 'absolute',
@@ -593,6 +652,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     marginTop: spacing.md,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   primaryCta: {
     backgroundColor: colors.streak,
@@ -703,7 +764,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   dayRingDone: { backgroundColor: colors.streak, borderColor: colors.streak },
-  dayRingToday: { borderColor: colors.streak, backgroundColor: '#FFF0E8' },
+  dayRingPatched: { backgroundColor: colors.ice, borderColor: colors.ice },
+  dayRingToday: { borderColor: colors.streak, backgroundColor: colors.streakSoft },
   dayRingSelected: {
     transform: [{ scale: 1.08 }],
     borderColor: colors.text,
@@ -819,10 +881,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   heatCellDone: { backgroundColor: colors.success },
+  heatCellPatched: { backgroundColor: colors.ice },
   heatCellToday: {
     borderWidth: 2,
     borderColor: colors.streak,
-    backgroundColor: '#FFF0E8',
+    backgroundColor: colors.streakSoft,
   },
 
   warningCard: {

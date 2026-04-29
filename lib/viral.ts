@@ -1,5 +1,6 @@
 import { getSetting, setSetting } from './db';
 import { localDayKey, localDaysBetween } from './dates';
+import { buildGrowthLink, buildSharePayload } from './growth';
 
 const SQUAD_ROOM_SETTING = 'squad_room';
 const MONTHLY_TEST_SETTING = 'last_monthly_test_date';
@@ -23,10 +24,6 @@ export type MonthlyTestStatus = {
   lastTestDate: string | null;
 };
 
-function encode(value: string): string {
-  return encodeURIComponent(value);
-}
-
 function normalizeTeamCode(rawCode: string): string {
   const cleaned = rawCode
     .trim()
@@ -39,7 +36,7 @@ function normalizeTeamCode(rawCode: string): string {
 }
 
 function roomNameFromCode(code: string): string {
-  return code.replace(/^TEAM-/, '').replace(/-/g, ' ') || 'Just20 Room';
+  return code.replace(/^TEAM-/, '').replace(/-/g, ' ') || 'Just 20 Room';
 }
 
 export function buildDefaultRoomCode(inviteCode: string): string {
@@ -112,16 +109,21 @@ export function getPetEvolution(streakDays: number): PetEvolution {
 }
 
 export function buildDuelUrl(inviteCode: string, targetSeconds: number): string {
-  return `just20-jake://duel?code=${encode(inviteCode)}&target=${targetSeconds}`;
+  return buildGrowthLink({
+    path: 'duel',
+    inviteCode,
+    source: 'squad',
+    campaign: 'async_duel',
+    params: { target: targetSeconds },
+  });
 }
 
 export function buildDuelShareText(inviteCode: string, targetSeconds: number, streakDays: number): string {
-  const streakLine = streakDays > 0 ? `Day ${streakDays} is locked.` : 'I am starting my Just20 run.';
-  return `${streakLine} Beat my 20 pushups in ${targetSeconds}s.\n\n${buildDuelUrl(inviteCode, targetSeconds)}\n\nNo excuses. Tap in.\n#just20`;
+  return buildSharePayload('duel', { inviteCode, targetSeconds, streakDays }).message;
 }
 
 export function buildNudgeShareText(buddyUsername: string, inviteCode: string): string {
-  return `${buddyUsername}, this is your Just20 nudge. 20 pushups before the day gets away.\n\nAdd me back: ${inviteCode}\n#just20`;
+  return buildSharePayload('nudge', { inviteCode, buddyUsername }).message;
 }
 
 export function buildWeeklyWrappedShareText(input: {
@@ -131,7 +133,7 @@ export function buildWeeklyWrappedShareText(input: {
   xpBalance: number;
   inviteCode: string;
 }): string {
-  return `My Just20 week: ${input.completedDays}/7 days, ${input.streakDays}-day current streak, ${input.bestStreak}-day best, ${input.xpBalance} XP.\n\nTry to catch me: ${input.inviteCode}\n#just20`;
+  return buildSharePayload('weekly_wrapped', input).message;
 }
 
 export function buildMonthlyTestShareText(input: {
@@ -139,19 +141,25 @@ export function buildMonthlyTestShareText(input: {
   durationSeconds: number | null;
   inviteCode: string;
 }): string {
-  const timeLine = input.durationSeconds ? ` in ${input.durationSeconds}s` : '';
-  return `Monthly Just20 test: ${input.reps} clean pushups${timeLine}.\n\nI am checking again in 30 days. Join me: ${input.inviteCode}\n#just20`;
+  return buildSharePayload('monthly_test', input).message;
 }
 
 export function buildPetEvolutionShareText(streakDays: number, inviteCode: string): string {
   const pet = getPetEvolution(streakDays);
-  return `My Just20 streak pet is now ${pet.emoji} ${pet.name} at Day ${streakDays}.\n\n${pet.nextGoal}\n\nJoin my squad: ${inviteCode}\n#just20`;
+  const payload = buildSharePayload('pet', { streakDays, inviteCode });
+  return `My Just 20 streak pet is now ${pet.emoji} ${pet.name} at Day ${streakDays}.\n\n${pet.nextGoal}\n\nJoin my squad:\n${payload.link}\n\nCode: ${inviteCode}\n#just20`;
 }
 
 export function buildTeamChallengeUrl(roomCode: string, inviteCode: string): string {
-  return `just20-jake://team?room=${encode(roomCode)}&code=${encode(inviteCode)}`;
+  return buildGrowthLink({
+    path: 'team',
+    inviteCode,
+    source: 'squad',
+    campaign: 'team_room',
+    params: { room: roomCode },
+  });
 }
 
 export function buildTeamChallengeShareText(roomCode: string, inviteCode: string): string {
-  return `Join my Just20 team room: ${roomCode}.\n\nDaily 20 pushups, streak pressure, no group chat essays.\n\n${buildTeamChallengeUrl(roomCode, inviteCode)}\n#just20`;
+  return buildSharePayload('team', { inviteCode, roomCode }).message;
 }

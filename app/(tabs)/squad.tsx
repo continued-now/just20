@@ -22,23 +22,28 @@ import {
   getUserSeed,
   isCompletedToday,
 } from '../../lib/db';
-import { buildChallengeShareText, buildShareText, getOrCreateUser } from '../../lib/user';
+import { getOrCreateUser } from '../../lib/user';
 import { getBuddyStatuses, linkBuddy } from '../../lib/social';
 import { type BuddyStatus } from '../../lib/social';
+import { SUPABASE_ENABLED } from '../../lib/supabase';
 import { getXp } from '../../lib/xp';
 import {
   buildDefaultRoomCode,
-  buildDuelShareText,
-  buildNudgeShareText,
   buildPetEvolutionShareText,
-  buildTeamChallengeShareText,
-  buildWeeklyWrappedShareText,
   getCurrentSquadRoom,
   getMonthlyTestStatus,
   getPetEvolution,
   joinSquadRoom,
   type SquadRoom,
 } from '../../lib/viral';
+import {
+  buildSharePayload,
+  getWeeklyChallenge,
+  growthEventFromPayload,
+  recordGrowthEvent,
+  type GrowthSharePayload,
+} from '../../lib/growth';
+import { validateInviteCode } from '../../lib/validation';
 
 type PageData = {
   username: string | null;
@@ -87,120 +92,156 @@ export default function SquadScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
+
       async function load() {
-        const [
-          user,
-          streakData,
-          coinsData,
-          xpData,
-          buddies,
-          seed,
-          completedToday,
-          bestTimeMs,
-          completedDaysThisWeek,
-          room,
-          monthlyTest,
-        ] = await Promise.all([
-          getOrCreateUser(),
-          getStreak(),
-          getCoins(),
-          getXp(),
-          getBuddyStatuses(),
-          getUserSeed(),
-          isCompletedToday(),
-          getBestCompletedTime(),
-          getCompletedDaysThisWeek(),
-          getCurrentSquadRoom(),
-          getMonthlyTestStatus(),
-        ]);
-        setData({
-          username: user.username,
-          inviteCode: user.inviteCode,
-          streak: streakData.current,
-          completedToday,
-          coinBalance: coinsData.balance,
-          xpBalance: xpData.balance,
-          bestStreak: streakData.best,
-          bestTimeMs,
-          completedDaysThisWeek,
-          monthlyTestAvailable: monthlyTest.available,
-          daysUntilMonthlyTest: monthlyTest.daysUntilNext,
-          buddies,
-          room,
-          rank: computeRank(streakData.current, seed),
-          userSeed: seed,
-        });
+        try {
+          const [
+            user,
+            streakData,
+            coinsData,
+            xpData,
+            buddies,
+            seed,
+            completedToday,
+            bestTimeMs,
+            completedDaysThisWeek,
+            room,
+            monthlyTest,
+          ] = await Promise.all([
+            getOrCreateUser(),
+            getStreak(),
+            getCoins(),
+            getXp(),
+            getBuddyStatuses(),
+            getUserSeed(),
+            isCompletedToday(),
+            getBestCompletedTime(),
+            getCompletedDaysThisWeek(),
+            getCurrentSquadRoom(),
+            getMonthlyTestStatus(),
+          ]);
+          if (!active) return;
+          setData({
+            username: user.username,
+            inviteCode: user.inviteCode,
+            streak: streakData.current,
+            completedToday,
+            coinBalance: coinsData.balance,
+            xpBalance: xpData.balance,
+            bestStreak: streakData.best,
+            bestTimeMs,
+            completedDaysThisWeek,
+            monthlyTestAvailable: monthlyTest.available,
+            daysUntilMonthlyTest: monthlyTest.daysUntilNext,
+            buddies,
+            room,
+            rank: computeRank(streakData.current, seed),
+            userSeed: seed,
+          });
+        } catch {
+          if (active) setData(null);
+        }
       }
       load();
+      return () => {
+        active = false;
+      };
     }, [])
   );
 
   async function handleShare() {
     if (!data) return;
-    const text = buildShareText(data.inviteCode, data.streak);
-    try {
-      await Share.share({ message: text });
-    } catch (_) {}
+    await shareGrowthPayload(buildSharePayload('profile', {
+      inviteCode: data.inviteCode,
+      streakDays: data.streak,
+      source: 'squad',
+    }), 'squad_code');
   }
 
   async function handleShareChallenge() {
     if (!data) return;
-    const text = buildChallengeShareText(data.inviteCode, data.streak, 7);
-    try {
-      await Share.share({ message: text });
-    } catch (_) {}
+    await shareGrowthPayload(buildSharePayload('challenge', {
+      inviteCode: data.inviteCode,
+      streakDays: data.streak,
+      challengeDays: 7,
+      source: 'squad',
+    }), 'friend_streak');
   }
 
   async function handleShareDuel() {
     if (!data) return;
     const targetSeconds = data.bestTimeMs ? Math.max(10, Math.round(data.bestTimeMs / 1000)) : 60;
-    const text = buildDuelShareText(data.inviteCode, targetSeconds, data.streak);
-    try {
-      await Share.share({ message: text });
-    } catch (_) {}
+    await shareGrowthPayload(buildSharePayload('duel', {
+      inviteCode: data.inviteCode,
+      targetSeconds,
+      streakDays: data.streak,
+      source: 'squad',
+    }), 'async_duel');
   }
 
   async function handleShareWrapped() {
     if (!data) return;
-    const text = buildWeeklyWrappedShareText({
+    await shareGrowthPayload(buildSharePayload('weekly_wrapped', {
       completedDays: data.completedDaysThisWeek,
       streakDays: data.streak,
       bestStreak: data.bestStreak,
       xpBalance: data.xpBalance,
       inviteCode: data.inviteCode,
-    });
-    try {
-      await Share.share({ message: text });
-    } catch (_) {}
+      source: 'squad',
+    }), 'weekly_wrapped');
   }
 
   async function handleSharePet() {
     if (!data) return;
-    try {
-      await Share.share({ message: buildPetEvolutionShareText(data.streak, data.inviteCode) });
-    } catch (_) {}
+    const payload = buildSharePayload('pet', {
+      inviteCode: data.inviteCode,
+      streakDays: data.streak,
+      source: 'squad',
+    });
+    await shareGrowthPayload({
+      ...payload,
+      message: buildPetEvolutionShareText(data.streak, data.inviteCode),
+    }, 'streak_pet');
   }
 
   async function handleNudgeBuddy(buddy: BuddyStatus) {
     if (!data) return;
-    try {
-      await Share.share({ message: buildNudgeShareText(buddy.username, data.inviteCode) });
-    } catch (_) {}
+    await shareGrowthPayload(buildSharePayload('nudge', {
+      inviteCode: data.inviteCode,
+      buddyUsername: buddy.username,
+      source: 'squad',
+    }), 'buddy_nudge');
+  }
+
+  async function handleShareWeeklyChallenge() {
+    if (!data) return;
+    await shareGrowthPayload(buildSharePayload('weekly_challenge', {
+      inviteCode: data.inviteCode,
+      streakDays: data.streak,
+      weeklyChallenge,
+      source: 'weekly_challenge',
+    }), 'weekly_challenge');
   }
 
   async function handleJoinRoom(rawCode = roomInput) {
     const code = rawCode.trim();
     if (!code) return;
     setJoiningRoom(true);
-    const result = await joinSquadRoom(code);
-    setJoiningRoom(false);
-    if (!result.success) {
-      Alert.alert('Room not joined', result.error ?? 'Something went wrong.');
-      return;
+    try {
+      const result = await joinSquadRoom(code);
+      if (!result.success) {
+        Alert.alert('Room not joined', result.error ?? 'Something went wrong.');
+        return;
+      }
+      setRoomInput('');
+      setData(prev => prev ? { ...prev, room: result.room } : prev);
+      Alert.alert('Team room joined', `You are now in ${result.room?.code}.`);
+    } catch {
+      Alert.alert('Room not joined', 'Something went wrong.');
+    } finally {
+      setJoiningRoom(false);
     }
-    setRoomInput('');
-    setData(prev => prev ? { ...prev, room: result.room } : prev);
-    Alert.alert('Team room joined', `You are now in ${result.room?.code}.`);
   }
 
   async function handleCreateRoom() {
@@ -210,28 +251,51 @@ export default function SquadScreen() {
 
   async function handleShareTeamRoom() {
     if (!data) return;
-    const room = data.room ?? (await joinSquadRoom(buildDefaultRoomCode(data.inviteCode))).room;
-    if (!room) return;
-    setData(prev => prev ? { ...prev, room } : prev);
     try {
-      await Share.share({ message: buildTeamChallengeShareText(room.code, data.inviteCode) });
-    } catch (_) {}
+      const room = data.room ?? (await joinSquadRoom(buildDefaultRoomCode(data.inviteCode))).room;
+      if (!room) return;
+      setData(prev => prev ? { ...prev, room } : prev);
+      await shareGrowthPayload(buildSharePayload('team', {
+        inviteCode: data.inviteCode,
+        roomCode: room.code,
+        source: 'squad',
+      }), 'team_room');
+    } catch (error) {
+      await recordGrowthEvent({
+        eventType: 'share_failed',
+        context: 'team',
+        source: 'squad',
+        campaign: 'team_room',
+        inviteCode: data.inviteCode,
+        metadata: { surface: 'team_room', message: error instanceof Error ? error.message : String(error) },
+      });
+    }
   }
 
   async function handleLink() {
-    const code = codeInput.trim().toUpperCase();
-    if (!code) return;
+    const validation = validateInviteCode(codeInput);
+    if (validation.error || !validation.code) {
+      Alert.alert('Not linked', validation.error ?? 'Use a valid Just 20 invite code.');
+      return;
+    }
+    const code = validation.code;
+    setCodeInput(code);
     setLinking(true);
-    const result = await linkBuddy(code);
-    setLinking(false);
-    if (result.success) {
-      setCodeInput('');
-      // Reload buddies
-      const buddies = await getBuddyStatuses();
-      setData(prev => prev ? { ...prev, buddies } : prev);
-      Alert.alert('Linked! 🤝', `You and ${result.username ?? 'your buddy'} are now accountable to each other.`);
-    } else {
-      Alert.alert('Not linked', result.error ?? 'Something went wrong.');
+    try {
+      const result = await linkBuddy(code);
+      if (result.success) {
+        setCodeInput('');
+        // Reload buddies
+        const buddies = await getBuddyStatuses();
+        setData(prev => prev ? { ...prev, buddies } : prev);
+        Alert.alert('Linked! 🤝', `You and ${result.username ?? 'your buddy'} are now accountable to each other.`);
+      } else {
+        Alert.alert('Not linked', result.error ?? 'Something went wrong.');
+      }
+    } catch {
+      Alert.alert('Not linked', 'Something went wrong.');
+    } finally {
+      setLinking(false);
     }
   }
 
@@ -247,10 +311,13 @@ export default function SquadScreen() {
     ? `${participantCount} people in the loop`
     : 'Start a shared streak';
   const friendStreakHint = buddyCount > 0
-    ? `${lockedCount}/${participantCount} locked today. Share the challenge link to pull in one more.`
+    ? SUPABASE_ENABLED
+      ? `${lockedCount}/${participantCount} locked today. Share the challenge link to pull in one more.`
+      : 'Buddies are saved here. Live check-ins are coming soon, so you can start building the squad now.'
     : 'Send a 7-day challenge link. When someone joins, this becomes your accountability streak.';
   const duelTargetSeconds = data?.bestTimeMs ? Math.max(10, Math.round(data.bestTimeMs / 1000)) : 60;
   const pet = getPetEvolution(data?.streak ?? 0);
+  const weeklyChallenge = getWeeklyChallenge();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -268,7 +335,7 @@ export default function SquadScreen() {
 
           <View style={[styles.card, styles.friendStreakCard]}>
             <View style={styles.friendHeader}>
-              <View>
+              <View style={styles.friendTitleWrap}>
                 <Text style={styles.cardTitle}>Friend Streak</Text>
                 <Text style={styles.friendTitle}>{friendStreakTitle}</Text>
               </View>
@@ -289,7 +356,7 @@ export default function SquadScreen() {
               {data?.buddies.slice(0, 3).map(b => (
                 <View key={b.inviteCode} style={[styles.friendPill, b.completedToday && styles.friendPillDone]}>
                   <Text style={[styles.friendPillText, b.completedToday && styles.friendPillTextDone]}>
-                    {b.username} · {b.completedToday ? 'locked' : 'open'}
+                    {b.username} · {SUPABASE_ENABLED ? (b.completedToday ? 'locked' : 'open') : 'added'}
                   </Text>
                 </View>
               ))}
@@ -299,6 +366,22 @@ export default function SquadScreen() {
               <Text style={styles.challengeBtnText}>
                 {buddyCount > 0 ? 'SHARE CHALLENGE LINK →' : 'START 7-DAY CHALLENGE →'}
               </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={[styles.card, styles.weeklyChallengeCard]}>
+            <View style={styles.weeklyChallengeHeader}>
+              <View style={styles.weeklyChallengeTextWrap}>
+                <Text style={styles.cardTitle}>Weekly Challenge</Text>
+                <Text style={styles.weeklyChallengeTitle}>{weeklyChallenge.title}</Text>
+                <Text style={styles.weeklyChallengeHint}>{weeklyChallenge.subtitle}</Text>
+              </View>
+              <View style={styles.weeklyChallengeBadge}>
+                <Text style={styles.weeklyChallengeBadgeText}>{weeklyChallenge.days}d</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.weeklyChallengeBtn} onPress={handleShareWeeklyChallenge} activeOpacity={0.85}>
+              <Text style={styles.weeklyChallengeBtnText}>{weeklyChallenge.cta} →</Text>
             </TouchableOpacity>
           </View>
 
@@ -339,7 +422,7 @@ export default function SquadScreen() {
               <View>
                 <Text style={styles.cardTitle}>Squad Room</Text>
                 <Text style={styles.roomTitle}>
-                  {data?.room ? data.room.code : 'Creator and team codes'}
+                  {data?.room ? data.room.code : 'Your team code'}
                 </Text>
               </View>
               <TouchableOpacity onPress={handleShareTeamRoom} activeOpacity={0.82} style={styles.roomShareBtn}>
@@ -347,7 +430,7 @@ export default function SquadScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.roomHint}>
-              Use this for offices, creators, campuses, or friend groups. Local for now; backend turns it into live rooms.
+              Use this for friends, classmates, coworkers, or any group that wants a little daily pressure. Live room progress is coming soon.
             </Text>
             <View style={styles.inputRow}>
               <TextInput
@@ -401,7 +484,7 @@ export default function SquadScreen() {
                 placeholder="JUST-XXXXXX"
                 placeholderTextColor={colors.subtext}
                 value={codeInput}
-                onChangeText={t => setCodeInput(t.toUpperCase())}
+                onChangeText={t => setCodeInput(t.toUpperCase().replace(/[^A-Z0-9- ]/g, ''))}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 maxLength={11}
@@ -431,7 +514,7 @@ export default function SquadScreen() {
                   <View style={styles.buddyInfo}>
                     <Text style={styles.buddyName}>{b.username}</Text>
                     <Text style={styles.buddyStatus}>
-                      {b.completedToday ? '✅ Done today' : '⏳ Pending today'}
+                      {SUPABASE_ENABLED ? (b.completedToday ? '✅ Done today' : '⏳ Pending today') : 'Added · check-ins soon'}
                     </Text>
                   </View>
                   <TouchableOpacity style={styles.nudgeBtn} onPress={() => handleNudgeBuddy(b)} activeOpacity={0.78}>
@@ -440,7 +523,7 @@ export default function SquadScreen() {
                 </View>
               ))}
               <Text style={styles.syncNote}>
-                Real-time sync unlocks when backend is connected.
+                Live buddy check-ins are coming soon.
               </Text>
             </View>
           )}
@@ -461,7 +544,7 @@ export default function SquadScreen() {
             <Text style={styles.cardTitle}>Weekly Leaderboard</Text>
             <Text style={styles.leaderHint}>
               Global rankings unlock once you connect friends.{'\n'}
-              Current view is a preview.
+              Invite friends to make this board competitive.
             </Text>
             {leaderboard.map((entry, i) => (
               <View key={entry.name} style={[styles.leaderRow, entry.isMe && styles.leaderRowMe]}>
@@ -484,7 +567,7 @@ export default function SquadScreen() {
               <Text style={styles.rankEmoji}>📊</Text>
               <View style={styles.rankInfo}>
                 <Text style={styles.rankNum}>Top {100 - data.rank}% pace</Text>
-                <Text style={styles.rankSub}>personal league preview until live rankings launch</Text>
+                <Text style={styles.rankSub}>your personal league pace</Text>
               </View>
             </View>
           )}
@@ -492,6 +575,18 @@ export default function SquadScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+async function shareGrowthPayload(payload: GrowthSharePayload, surface: string): Promise<void> {
+  try {
+    await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface }));
+    await Share.share({ message: payload.message, title: payload.title });
+  } catch (error) {
+    await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
+      surface,
+      message: error instanceof Error ? error.message : String(error),
+    }));
+  }
 }
 
 function ViralActionCard({
@@ -528,7 +623,7 @@ function ViralActionCard({
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl },
+  content: { padding: spacing.lg, gap: spacing.lg, paddingBottom: spacing.xxl + spacing.xl },
   heading: { fontSize: 28, fontWeight: '900', color: colors.text },
 
   card: {
@@ -549,8 +644,8 @@ const styles = StyleSheet.create({
 
   // Friend streak
   friendStreakCard: {
-    backgroundColor: '#FFF6E8',
-    borderColor: '#FFD9A8',
+    backgroundColor: colors.streakSoft,
+    borderColor: colors.creamDeep,
   },
   friendHeader: {
     flexDirection: 'row',
@@ -558,6 +653,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  friendTitleWrap: { flex: 1, minWidth: 0 },
   friendTitle: {
     fontSize: 24,
     fontWeight: '900',
@@ -567,6 +663,7 @@ const styles = StyleSheet.create({
   },
   friendDayBadge: {
     minWidth: 72,
+    flexShrink: 0,
     borderRadius: radius.lg,
     backgroundColor: colors.text,
     paddingVertical: spacing.sm,
@@ -634,6 +731,57 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
 
+  // Weekly challenge
+  weeklyChallengeCard: {
+    backgroundColor: colors.successSoft,
+    borderColor: colors.border,
+  },
+  weeklyChallengeHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  weeklyChallengeTextWrap: { flex: 1, minWidth: 0, gap: spacing.xs },
+  weeklyChallengeTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: colors.text,
+    letterSpacing: -0.7,
+  },
+  weeklyChallengeHint: {
+    fontSize: fontSize.sm,
+    color: colors.subtext,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  weeklyChallengeBadge: {
+    width: 54,
+    height: 54,
+    borderRadius: 20,
+    backgroundColor: colors.brandSoft,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyChallengeBadgeText: {
+    color: colors.brandDark,
+    fontSize: fontSize.md,
+    fontWeight: '900',
+  },
+  weeklyChallengeBtn: {
+    backgroundColor: colors.brandDark,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  weeklyChallengeBtnText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+
   // Viral action cards
   viralGrid: {
     flexDirection: 'row',
@@ -676,7 +824,7 @@ const styles = StyleSheet.create({
   viralBtn: {
     marginTop: spacing.xs,
     borderRadius: radius.full,
-    backgroundColor: '#FFF0E8',
+    backgroundColor: colors.streakSoft,
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
@@ -691,8 +839,8 @@ const styles = StyleSheet.create({
 
   // Team rooms
   roomCard: {
-    backgroundColor: '#F7FAFF',
-    borderColor: '#D7E7FF',
+    backgroundColor: colors.iceSoft,
+    borderColor: colors.border,
   },
   roomHeader: {
     flexDirection: 'row',
@@ -760,7 +908,7 @@ const styles = StyleSheet.create({
 
   // Add buddy
   addHint: { fontSize: fontSize.sm, color: colors.subtext, fontWeight: '500' },
-  inputRow: { flexDirection: 'row', gap: spacing.sm },
+  inputRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'stretch' },
   codeInput: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -804,7 +952,7 @@ const styles = StyleSheet.create({
   buddyStatus: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '500' },
   nudgeBtn: {
     borderRadius: radius.full,
-    backgroundColor: '#FFF0E8',
+    backgroundColor: colors.streakSoft,
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
   },
@@ -847,7 +995,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF8F5',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
-    marginHorizontal: -spacing.sm,
   },
   leaderRank: {
     width: 28,

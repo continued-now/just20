@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="An interactive just20-jake landing page prototype built around the 20-rep game loop."
+      content="Try the Just 20 game loop: count 20 reps, earn XP, feed the streak, and unlock a proof card."
     />
-    <meta name="theme-color" content="#fff7d6" />
-    <title>just20-jake | Try the 20-rep loop</title>
+    <meta name="theme-color" content="#58CC02" />
+    <title>Just 20 | Try the 20-rep loop</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -17,9 +19,9 @@
     <div class="grain" aria-hidden="true"></div>
 
     <header class="nav">
-      <a class="brand" href="#top" aria-label="just20-jake home">
-        <span class="brand-badge">20</span>
-        <span>just20-jake</span>
+      <a class="brand brand-toggle" href="#top" aria-label="Just 20 home">
+        <span class="brand-word">just</span>
+        <span class="brand-knob">20</span>
       </a>
       <nav aria-label="Landing navigation">
         <a href="#game">Try it</a>
@@ -31,10 +33,10 @@
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Playable landing mockup</p>
+          <p class="eyebrow">Tiny game loop</p>
           <h1>Do 20 before this little guy gets dramatic.</h1>
           <p class="lede">
-            Tap through a tiny version of the Just20 loop: reps get counted, XP changes,
+            Tap through a tiny version of the Just 20 loop: reps get counted, XP changes,
             the streak pet reacts, and your proof card gets generated on the spot.
           </p>
           <div class="hero-actions">
@@ -43,9 +45,9 @@
           </div>
         </div>
 
-        <aside class="phone-shell" aria-label="Interactive app preview">
+        <aside class="phone-shell" aria-label="Interactive Just 20 loop">
           <div class="phone-top">
-            <span>just20</span>
+            <span class="mini-brand">Just 20</span>
             <span class="window-pill" id="windowPill">8am window</span>
           </div>
           <div class="pet-orbit">
@@ -69,7 +71,7 @@
       <section id="game" class="game-section">
         <div class="section-heading">
           <p class="eyebrow">Tap reps, feel the loop</p>
-          <h2>The landing page should make the habit playable.</h2>
+          <h2>The habit feels easier when it is playable.</h2>
         </div>
 
         <div class="game-grid">
@@ -131,14 +133,14 @@
           <p class="eyebrow">Proof card generator</p>
           <h2>Make the win look worth sending.</h2>
           <p>
-            The share moment is where Just20 can spread. This mock lets the visitor
-            personalize a proof card and see why finishing should feel collectible.
+            Finish the 20-rep loop, personalize your proof card, and see why the daily win
+            feels collectible.
           </p>
 
           <form class="receipt-form" id="receiptForm">
             <label>
               <span>Name</span>
-              <input id="nameInput" type="text" value="Jake" maxlength="18" />
+              <input id="nameInput" type="text" value="Alex" maxlength="18" />
             </label>
             <label>
               <span>Streak day</span>
@@ -149,7 +151,7 @@
 
         <article class="proof-card" id="proofCard">
           <div class="proof-top">
-            <span>just20 receipt</span>
+            <span>Just 20 receipt</span>
             <span id="proofMode">Perfect time</span>
           </div>
           <div class="proof-body">
@@ -157,7 +159,7 @@
             <span class="proof-label">pushups counted</span>
           </div>
           <div class="proof-bottom">
-            <strong id="proofName">Jake</strong>
+            <strong id="proofName">Alex</strong>
             <span id="proofStreak">Day 7 locked</span>
             <span id="proofXp">+150 XP</span>
           </div>
@@ -168,7 +170,7 @@
       <section class="calibration-demo">
         <div>
           <p class="eyebrow">Camera trust moment</p>
-          <h2>A calibration demo can teach the app without a lecture.</h2>
+          <h2>Calibration makes the camera feel trustworthy.</h2>
         </div>
         <div class="calibration-card">
           <div class="camera-box" id="cameraBox">
@@ -184,7 +186,7 @@
           </div>
           <div class="calibration-copy">
             <strong id="calibrationTitle">Camera is guessing</strong>
-            <span id="calibrationText">Tap calibrate to snap the body into frame and raise confidence.</span>
+            <span id="calibrationText">Tap calibrate to help the camera find your body.</span>
             <button class="button primary compact" id="calibrateButton" type="button">Calibrate</button>
           </div>
         </div>
@@ -194,10 +196,10 @@
         <div class="waitlist-card">
           <p class="eyebrow">Early squad</p>
           <h2>Want this version?</h2>
-          <p>This is just a mockup, but the interaction style is ready to become the main landing hook.</p>
+          <p>Join the early squad and get notified when the next version is ready.</p>
           <form id="waitlistForm" class="waitlist-form">
             <input id="emailInput" type="email" placeholder="you@example.com" required />
-            <button class="button primary" type="submit">Save local spot</button>
+            <button class="button primary" type="submit">Save my spot</button>
           </form>
           <p class="form-status" id="formStatus" role="status"></p>
         </div>
@@ -205,7 +207,7 @@
     </main>
 
     <footer class="footer">
-      <span>just20-jake landing2</span>
+      <span>Just 20</span>
       <span>Tap. Count. Flex. Repeat.</span>
     </footer>
 

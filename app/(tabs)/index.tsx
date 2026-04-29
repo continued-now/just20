@@ -1,31 +1,36 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BrandLogo } from '../../components/BrandLogo';
 import { Mascot, getMoodFromContext, getTierInfo } from '../../components/Mascot';
 import { StreakBadge } from '../../components/StreakBadge';
+import { XpProgressCard } from '../../components/XpProgressCard';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { useCountdown } from '../../hooks/useCountdown';
 import { useNudges } from '../../hooks/useNudges';
 import { useStreak } from '../../hooks/useStreak';
-import { getStreakRepairStatus, getCoins } from '../../lib/db';
+import { getCoins, getRecoveryOffer, type RecoveryOffer, type RecoveryType } from '../../lib/db';
 import { isChestAvailable } from '../../lib/coins';
 import { getBuddyStatuses } from '../../lib/social';
 import { type BuddyStatus } from '../../lib/social';
+import { getXp } from '../../lib/xp';
 
 export default function HomeScreen() {
   const router = useRouter();
   const streak = useStreak();
   const nudges = useNudges();
   const { remainingMs, refreshWindow } = useCountdown();
-  const repairChecked = useRef(false);
 
   const [chestReady, setChestReady] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
+  const [totalXp, setTotalXp] = useState(0);
   const [buddies, setBuddies] = useState<BuddyStatus[]>([]);
+  const [recoveryOffer, setRecoveryOffer] = useState<RecoveryOffer | null>(null);
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
       streak.refresh();
       nudges.refresh();
       refreshWindow();
@@ -35,20 +40,26 @@ export default function HomeScreen() {
         isChestAvailable(),
         getCoins(),
         getBuddyStatuses(),
-      ]).then(([chest, coins, buds]) => {
+        getXp(),
+        getRecoveryOffer(),
+      ]).then(([chest, coins, buds, xp, recovery]) => {
+        if (!active) return;
         setChestReady(chest);
         setCoinBalance(coins.balance);
         setBuddies(buds);
+        setTotalXp(xp.totalEarned);
+        setRecoveryOffer(recovery);
+      }).catch(() => {
+        if (!active) return;
+        setChestReady(false);
+        setCoinBalance(0);
+        setTotalXp(0);
+        setRecoveryOffer(null);
       });
 
-      if (!repairChecked.current) {
-        repairChecked.current = true;
-        getStreakRepairStatus().then(repair => {
-          if (repair.eligible) {
-            router.push(`/streak-repair?prevStreak=${repair.previousStreak}`);
-          }
-        });
-      }
+      return () => {
+        active = false;
+      };
     }, [streak.refresh, nudges.refresh, router])
   );
 
@@ -81,7 +92,7 @@ export default function HomeScreen() {
     }
     if (nudges.mode === 'scheduled_fallback') {
       if (nudges.remaining > 0) {
-        return `${formatHour(nudges.scheduledHour)} window + ${nudges.remaining} fallback nudge${nudges.remaining !== 1 ? 's' : ''}`;
+        return `${formatHour(nudges.scheduledHour)} window + ${nudges.remaining} backup nudge${nudges.remaining !== 1 ? 's' : ''}`;
       }
       return nudges.scheduledWindowActive
         ? `Set-time window at ${formatHour(nudges.scheduledHour)}`
@@ -90,6 +101,17 @@ export default function HomeScreen() {
     if (nudges.remaining <= 0) return "Day's almost over. Tomorrow. 😑";
     if (nudges.remaining === 1) return "Last chance today 🔥";
     return `${nudges.remaining} nudge${nudges.remaining !== 1 ? 's' : ''} left today`;
+  }
+
+  function startRecovery(type: RecoveryType) {
+    if (!recoveryOffer?.missedDate) return;
+    router.push({
+      pathname: '/workout',
+      params: {
+        recoveryType: type,
+        repairedDate: recoveryOffer.missedDate,
+      },
+    } as any);
   }
 
   // Buddy summary for the social proof strip
@@ -107,12 +129,14 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>just20</Text>
-          {coinBalance > 0 && (
-            <View style={styles.coinPill}>
+          <BrandLogo size="sm" />
+          <TouchableOpacity
+            style={styles.coinPill}
+            onPress={() => router.push('/xp-shop' as any)}
+            activeOpacity={0.78}
+          >
               <Text style={styles.coinText}>🪙 {coinBalance}</Text>
-            </View>
-          )}
+          </TouchableOpacity>
         </View>
 
         <View style={styles.center}>
@@ -132,6 +156,64 @@ export default function HomeScreen() {
           )}
 
           <Text style={styles.status}>{statusText()}</Text>
+
+          {recoveryOffer?.available && !streak.completedToday && (
+            <View style={styles.recoveryCard}>
+              <Text style={styles.recoveryEyebrow}>
+                {recoveryOffer.reason === 'debt_due' ? 'DEBT SET DUE' : 'STREAK PATCH AVAILABLE'}
+              </Text>
+              <Text style={styles.recoveryTitle}>
+                {recoveryOffer.reason === 'debt_due'
+                  ? 'Clear the last 10.'
+                  : 'Yesterday is patchable.'}
+              </Text>
+              <Text style={styles.recoveryCopy}>
+                {recoveryOffer.reason === 'debt_due'
+                  ? 'Do 30 today to clear the debt and keep the active streak alive.'
+                  : recoveryOffer.patchWindowOpen
+                  ? 'Patch window is open. Do 40 now for max recovery XP.'
+                  : `Do 40 today, or split it into 10 extra over two days. Patch window: ${formatRecoveryTime(recoveryOffer.patchWindowStart)}.`}
+              </Text>
+              <View style={styles.recoveryActions}>
+                {recoveryOffer.reason === 'debt_due' ? (
+                  <TouchableOpacity
+                    style={styles.recoveryPrimary}
+                    onPress={() => startRecovery('debt_set')}
+                    activeOpacity={0.84}
+                  >
+                    <Text style={styles.recoveryPrimaryText}>Do 30 now →</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    {recoveryOffer.canPatch && (
+                      <TouchableOpacity
+                        style={styles.recoveryPrimary}
+                        onPress={() => startRecovery('streak_patch')}
+                        activeOpacity={0.84}
+                      >
+                        <Text style={styles.recoveryPrimaryText}>Patch with 40 →</Text>
+                      </TouchableOpacity>
+                    )}
+                    {recoveryOffer.canDebtSet && (
+                      <TouchableOpacity
+                        style={styles.recoverySecondary}
+                        onPress={() => startRecovery('debt_set')}
+                        activeOpacity={0.78}
+                      >
+                        <Text style={styles.recoverySecondaryText}>Debt Set: 30 today</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+                )}
+              </View>
+            </View>
+          )}
+
+          <XpProgressCard
+            totalXp={totalXp}
+            compact
+            onPress={() => router.push('/xp-shop' as any)}
+          />
 
           {showCountdown && (
             <TouchableOpacity
@@ -194,6 +276,16 @@ export default function HomeScreen() {
   );
 }
 
+function formatRecoveryTime(value: number | null): string {
+  if (!value) return 'later today';
+  const date = new Date(value);
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const suffix = hours >= 12 ? 'pm' : 'am';
+  const hour12 = hours % 12 || 12;
+  return `${hour12}:${minutes.toString().padStart(2, '0')}${suffix}`;
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, paddingHorizontal: spacing.lg },
@@ -203,12 +295,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: colors.text,
-    letterSpacing: -1,
   },
   coinPill: {
     position: 'absolute',
@@ -240,25 +326,85 @@ const styles = StyleSheet.create({
     color: colors.subtext,
     textAlign: 'center',
     letterSpacing: 0.3,
-    marginTop: -spacing.sm,
   },
   status: {
     fontSize: fontSize.md,
     color: colors.subtext,
     textAlign: 'center',
     fontWeight: '500',
+    lineHeight: 22,
+    maxWidth: 320,
   },
   socialStrip: {
     fontSize: fontSize.sm,
     color: colors.streak,
     fontWeight: '700',
     textAlign: 'center',
+    lineHeight: 19,
+    maxWidth: 320,
   },
   invitePrompt: {
     fontSize: fontSize.sm,
     color: colors.subtext,
     fontWeight: '600',
     textAlign: 'center',
+    lineHeight: 19,
+    maxWidth: 320,
+  },
+  recoveryCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFF8DC',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#FFE082',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  recoveryEyebrow: {
+    color: '#9A6A00',
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+  },
+  recoveryTitle: {
+    color: colors.text,
+    fontSize: fontSize.lg,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  recoveryCopy: {
+    color: '#7B5B00',
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    lineHeight: 19,
+  },
+  recoveryActions: {
+    gap: spacing.sm,
+  },
+  recoveryPrimary: {
+    borderRadius: radius.full,
+    backgroundColor: colors.streak,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  recoveryPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  recoverySecondary: {
+    borderRadius: radius.full,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FFE082',
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  recoverySecondaryText: {
+    color: '#8A6400',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
   },
   countdownBanner: {
     backgroundColor: colors.accent,
@@ -303,12 +449,13 @@ const styles = StyleSheet.create({
     color: '#B8860B',
   },
   bottom: {
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl + spacing.md,
   },
   cta: {
     backgroundColor: colors.text,
     borderRadius: radius.md,
     paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
   },
   ctaText: {

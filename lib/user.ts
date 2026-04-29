@@ -1,4 +1,6 @@
 import { getUserProfile, setUserProfile, markOnboardingComplete, type UserProfile } from './db';
+import { buildGrowthLink, buildSharePayload } from './growth';
+import { validateUsername } from './validation';
 
 export { markOnboardingComplete };
 
@@ -31,25 +33,28 @@ export async function getOrCreateUser(): Promise<UserProfile> {
 }
 
 export async function updateUsername(username: string): Promise<void> {
+  const validation = validateUsername(username);
+  if (validation.error || !validation.username) {
+    throw new Error(validation.error ?? 'Invalid username.');
+  }
   const profile = await getOrCreateUser();
-  await setUserProfile({ ...profile, username: username.trim() });
+  await setUserProfile({ ...profile, username: validation.username });
 }
 
 export function buildChallengeUrl(inviteCode: string, challengeDays = 7): string {
-  return `just20-jake://challenge?code=${encodeURIComponent(inviteCode)}&days=${challengeDays}`;
+  return buildGrowthLink({
+    path: 'challenge',
+    inviteCode,
+    source: 'profile',
+    campaign: 'daily_challenge',
+    params: { days: challengeDays },
+  });
 }
 
 export function buildChallengeShareText(inviteCode: string, streakDays: number, challengeDays = 7): string {
-  const dayLine = streakDays > 0
-    ? `I just locked Day ${streakDays} on Just20.`
-    : "I'm starting Just20 today.";
-  const link = buildChallengeUrl(inviteCode, challengeDays);
-  return `${dayLine} Join my ${challengeDays}-day 20-pushup challenge.\n\n${link}\n\nNo gym. 20 pushups. Keep me honest.\n\nCode: ${inviteCode}\n#just20`;
+  return buildSharePayload('challenge', { inviteCode, streakDays, challengeDays }).message;
 }
 
 export function buildShareText(inviteCode: string, streakDays: number): string {
-  const streakLine = streakDays > 0
-    ? `I'm on day ${streakDays} of doing 20 pushups every single day.`
-    : "I'm doing 20 pushups every single day.";
-  return `${streakLine} Join my buddy streak on Just20! 💪\n\nAdd me with code: ${inviteCode}\n\n#just20 #fitness`;
+  return buildSharePayload('profile', { inviteCode, streakDays }).message;
 }

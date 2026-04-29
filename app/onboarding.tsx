@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BrandLogo } from '../components/BrandLogo';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { setSetting } from '../lib/db';
 import {
@@ -22,7 +23,8 @@ import {
   requestPermission,
   scheduleWindowWithFallbackNudges,
 } from '../lib/notifications';
-import { getOrCreateUser, markOnboardingComplete, updateUsername } from '../lib/user';
+import { markOnboardingComplete, updateUsername } from '../lib/user';
+import { validateUsername } from '../lib/validation';
 
 const { width } = Dimensions.get('window');
 const TOTAL_STEPS = 5;
@@ -40,7 +42,9 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState('');
+  const [usernameError, setUsernameError] = useState('');
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs so PanResponder closure always reads latest values without re-creation
   const stepRef = useRef(0);
@@ -49,13 +53,18 @@ export default function OnboardingScreen() {
   function goToStep(next: number) {
     Keyboard.dismiss();
     stepRef.current = next;
+    if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
     Animated.sequence([
       Animated.timing(fadeAnim, { toValue: 0, duration: 160, useNativeDriver: true }),
       Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
-    setTimeout(() => setStep(next), 160);
+    stepTimerRef.current = setTimeout(() => setStep(next), 160);
   }
   goToStepRef.current = goToStep;
+
+  useEffect(() => () => {
+    if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
+  }, []);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -69,8 +78,24 @@ export default function OnboardingScreen() {
     })
   ).current;
 
+  function handleUsernameNext() {
+    const validation = validateUsername(username, { optional: true });
+    if (validation.error) {
+      setUsernameError(validation.error);
+      return;
+    }
+    if (validation.username) setUsername(validation.username);
+    goToStep(2);
+  }
+
   async function finish() {
-    if (username.trim()) await updateUsername(username.trim());
+    const validation = validateUsername(username, { optional: true });
+    if (validation.error) {
+      setUsernameError(validation.error);
+      goToStep(1);
+      return;
+    }
+    if (validation.username) await updateUsername(validation.username);
     await markOnboardingComplete();
     router.replace('/');
   }
@@ -106,8 +131,12 @@ export default function OnboardingScreen() {
           {step === 1 && (
             <Step1
               username={username}
-              onChangeUsername={setUsername}
-              onNext={() => goToStep(2)}
+              error={usernameError}
+              onChangeUsername={(value) => {
+                setUsername(value);
+                setUsernameError('');
+              }}
+              onNext={handleUsernameNext}
             />
           )}
           {step === 2 && <Step2 onNext={() => goToStep(3)} />}
@@ -132,11 +161,11 @@ function Step0({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
       <MascotBounce emoji="🥚" />
-      <Text style={styles.headline}>just20</Text>
+      <BrandLogo size="lg" />
       <Text style={styles.subheadline}>20 pushups.{'\n'}Every day.{'\n'}No excuses.</Text>
       <Text style={styles.body}>No equipment. No gym. Just you and the floor.</Text>
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>LET'S GO →</Text>
+        <Text style={styles.btnText}>{"LET'S GO ->"}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -144,10 +173,12 @@ function Step0({ onNext }: { onNext: () => void }) {
 
 function Step1({
   username,
+  error,
   onChangeUsername,
   onNext,
 }: {
   username: string;
+  error: string;
   onChangeUsername: (s: string) => void;
   onNext: () => void;
 }) {
@@ -155,9 +186,9 @@ function Step1({
     <View style={styles.step}>
       <MascotBounce emoji="💪" />
       <Text style={styles.headline}>What do your{'\n'}friends call you?</Text>
-      <Text style={styles.body}>Shows up on your squad's leaderboard. Optional.</Text>
+      <Text style={styles.body}>{"Shows up on your squad's leaderboard. Optional."}</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, error ? styles.inputError : null]}
         placeholder="e.g. Constant"
         placeholderTextColor={colors.subtext}
         value={username}
@@ -167,8 +198,9 @@ function Step1({
         returnKeyType="done"
         onSubmitEditing={onNext}
       />
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>{username.trim() ? 'LOOKS GOOD →' : 'SKIP →'}</Text>
+        <Text style={styles.btnText}>{username.trim() ? 'LOOKS GOOD ->' : 'SKIP ->'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -220,7 +252,7 @@ function Step3({ onNext }: { onNext: () => void }) {
     <View style={styles.step}>
       <MascotBounce emoji="⚡" />
       <Text style={styles.headline}>Pick a time.{'\n'}Protect the streak.</Text>
-      <Text style={styles.body}>Default is a daily 10-minute window. Hit it clean, or fallback nudges start chasing you.</Text>
+      <Text style={styles.body}>Default is a daily 10-minute window. Hit it clean, or backup nudges start chasing you.</Text>
 
       <View style={styles.mechCard}>
         <View style={styles.mechRow}>
@@ -317,11 +349,12 @@ const styles = StyleSheet.create({
 
   mascot: { fontSize: 72 },
   headline: {
-    fontSize: 28,
+    fontSize: 42,
     fontWeight: '900',
     color: colors.text,
     textAlign: 'center',
-    lineHeight: 34,
+    lineHeight: 46,
+    letterSpacing: -1.4,
   },
   subheadline: {
     fontSize: 36,
@@ -336,7 +369,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     fontWeight: '500',
-    marginTop: -spacing.xs,
   },
 
   // Username input (Step 1)
@@ -351,6 +383,13 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     fontWeight: '700',
     color: colors.text,
+    textAlign: 'center',
+  },
+  inputError: { borderColor: colors.accent },
+  errorText: {
+    color: colors.accent,
+    fontSize: fontSize.xs,
+    fontWeight: '700',
     textAlign: 'center',
   },
 
@@ -446,7 +485,7 @@ const styles = StyleSheet.create({
   mechTextWrap: { flex: 1, gap: 2 },
   mechTitle: { fontSize: fontSize.sm, fontWeight: '800', color: colors.text },
   mechSub: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '500', lineHeight: 16 },
-  mechDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: -spacing.lg },
+  mechDivider: { height: 1, backgroundColor: colors.border },
 
   // Notification preview (Step 4)
   notifPreview: {

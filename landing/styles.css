@@ -3,23 +3,27 @@
 :root {
   --cream: #fff8df;
   --cream-2: #eff9dc;
-  --ink: #23321f;
+  --ink: #21321e;
   --muted: #697865;
   --card: #fffdf2;
-  --line: rgba(35, 50, 31, 0.14);
+  --line: rgba(33, 50, 30, 0.14);
   --grass: #58cc02;
-  --grass-dark: #43a300;
+  --grass-dark: #3f9700;
   --blue: #1cb0f6;
   --orange: #ff9f1c;
   --acid: #ffd43b;
   --mint: #58cc02;
   --ice: #84d8ff;
   --shadow: 0 28px 90px rgba(35, 68, 20, 0.14);
-  --page-x: clamp(1rem, 3vw, 2rem);
+  --page-x: clamp(1.15rem, 3vw, 2.25rem);
   --section-y: clamp(3.5rem, 6.5vw, 5.8rem);
   --section-y-tight: clamp(2.5rem, 5vw, 4.4rem);
   --card-pad: clamp(1rem, 2vw, 1.35rem);
   --stack-gap: clamp(1.25rem, 3vw, 2.6rem);
+  --headline-measure: 640px;
+  --section-heading-measure: 700px;
+  --copy-measure: 48ch;
+  --copy-measure-wide: 54ch;
 }
 
 * {
@@ -41,6 +45,18 @@ body {
     linear-gradient(135deg, var(--cream), #fbf7ed 50%, var(--cream-2));
   font-family: "Nunito", "Trebuchet MS", sans-serif;
   overflow-x: hidden;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3,
+p {
+  overflow-wrap: break-word;
 }
 
 body::before {
@@ -127,23 +143,46 @@ input:focus-visible {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0;
   border-radius: 999px;
-  padding: 0.42rem 0.85rem 0.42rem 0.45rem;
-  color: var(--grass-dark);
+  border-color: rgba(220, 255, 185, 0.55);
+  padding: 0.36rem 0.38rem 0.36rem 0.92rem;
+  color: #f5ffe8;
+  background: linear-gradient(180deg, var(--grass), var(--grass-dark));
+  box-shadow: inset 0 -5px 0 rgba(35, 50, 31, 0.16), 0 10px 30px rgba(23, 21, 19, 0.08);
   font-weight: 900;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.05em;
 }
 
-.brand-mark {
+.brand-word {
+  font-size: 1.32rem;
+  line-height: 1;
+}
+
+.brand-knob {
+  position: relative;
   display: grid;
   place-items: center;
   width: 2.35rem;
   height: 2.35rem;
+  margin-left: 0.72rem;
   border-radius: 50%;
-  color: #fff;
-  background: linear-gradient(180deg, var(--grass), var(--grass-dark));
-  box-shadow: inset 0 -4px 0 rgba(35, 50, 31, 0.18);
+  border: 2px solid #dfe9d3;
+  color: var(--grass-dark);
+  background: #fffdf2;
+  font-size: 0.92rem;
+  letter-spacing: -0.04em;
+}
+
+.brand-knob::after {
+  content: "";
+  position: absolute;
+  bottom: 0.32rem;
+  width: 45%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--grass);
+  opacity: 0.68;
 }
 
 .nav-links {
@@ -210,21 +249,22 @@ p {
 
 h1,
 h2 {
-  font-family: "Fredoka", "Nunito", sans-serif;
-  font-weight: 700;
-  line-height: 0.86;
-  letter-spacing: -0.055em;
+  font-family: "Nunito", "Fredoka", sans-serif;
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: -0.045em;
 }
 
 h1 {
-  max-width: 690px;
+  max-width: 680px;
   margin-bottom: 1rem;
-  font-size: clamp(3.9rem, 8.7vw, 7.4rem);
+  font-size: clamp(3.25rem, 6.7vw, 6.2rem);
 }
 
 h2 {
+  max-width: var(--section-heading-measure);
   margin-bottom: 1rem;
-  font-size: clamp(2.7rem, 5.7vw, 5.25rem);
+  font-size: clamp(2.4rem, 4.45vw, 4.25rem);
 }
 
 h3 {
@@ -238,9 +278,16 @@ h3 {
 .tracking-copy p,
 .xp-copy p,
 .waitlist-card p {
+  max-width: var(--copy-measure);
   color: var(--muted);
   font-size: clamp(1.05rem, 1.7vw, 1.26rem);
   line-height: 1.55;
+}
+
+.hero-copy,
+.tracking-copy,
+.xp-copy {
+  max-width: var(--headline-measure);
 }
 
 .hero-actions {
@@ -345,6 +392,11 @@ h3 {
 
 .phone-top {
   margin-bottom: clamp(3rem, 5vw, 3.8rem);
+}
+
+.mini-brand {
+  color: var(--grass-dark);
+  letter-spacing: -0.04em;
 }
 
 .pill {
@@ -486,7 +538,7 @@ h3 {
 }
 
 .section-heading {
-  max-width: 800px;
+  max-width: var(--section-heading-measure);
   margin-bottom: clamp(1.35rem, 3vw, 2rem);
 }
 
@@ -820,6 +872,9 @@ h3 {
 }
 
 .waitlist-card p {
+  margin-right: auto;
+  margin-left: auto;
+  max-width: var(--copy-measure-wide);
   color: rgba(255, 255, 255, 0.72);
 }
 
@@ -877,7 +932,7 @@ h3 {
   gap: 1rem;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 2rem clamp(1rem, 3vw, 2rem);
+  padding: 2rem var(--page-x);
   color: var(--muted);
   font-weight: 800;
 }
@@ -909,7 +964,7 @@ h3 {
   }
 }
 
-@media (max-width: 940px) {
+@media (max-width: 980px) {
   .nav-links {
     display: none;
   }
@@ -943,7 +998,7 @@ h3 {
 
 @media (max-width: 640px) {
   :root {
-    --page-x: clamp(0.9rem, 5vw, 1.15rem);
+    --page-x: clamp(1rem, 6vw, 1.35rem);
     --section-y: clamp(2.75rem, 10vw, 4rem);
     --section-y-tight: clamp(2.2rem, 8vw, 3rem);
     --card-pad: 1rem;
@@ -1020,7 +1075,7 @@ h3 {
   }
 
   .phone {
-    width: min(315px, 94vw);
+    width: min(315px, calc(100vw - (var(--page-x) * 2)));
     min-height: 520px;
     border-width: 7px;
     border-radius: 2.35rem;

@@ -1,44 +1,59 @@
 {
   "expo": {
-    "name": "just20-jake",
-    "slug": "just20-jake",
+    "name": "Just 20",
+    "slug": "just20",
     "version": "1.0.0",
-    "scheme": "just20-jake",
+    "scheme": "just20",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#FFF7D6",
+      "resizeMode": "contain"
+    },
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSCameraUsageDescription": "just20-jake needs the front camera to count your push-ups using pose detection.",
-        "NSPhotoLibraryAddUsageDescription": "just20-jake saves your completion card to your photos so you can share it.",
-        "NSLocationWhenInUseUsageDescription": "just20-jake shows your location on your share card.",
+        "NSCameraUsageDescription": "Just 20 uses the camera on-device to count clean push-ups. Video is not stored.",
+        "NSPhotoLibraryAddUsageDescription": "Just 20 can save a completion card to your photo library when you choose to share it.",
+        "NSPhotoLibraryUsageDescription": "Just 20 can read the completion card it creates when you choose a share destination.",
+        "NSLocationWhenInUseUsageDescription": "Just 20 adds your approximate location to a proof card only when you tap Add location.",
         "LSApplicationQueriesSchemes": [
           "instagram-stories"
         ]
       },
-      "bundleIdentifier": "com.anonymous.just20jake"
+      "bundleIdentifier": "com.anonymous.just20"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#F5F5F0"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFF7D6"
       },
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.POST_NOTIFICATIONS",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "com.anonymous.just20jake"
+      "package": "com.anonymous.just20"
     },
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#58CC02"
+        }
+      ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "just20-jake shows your location on your share card."
+          "locationWhenInUsePermission": "Just 20 adds your approximate location to a proof card only when you tap Add location."
         }
       ],
       "expo-font"

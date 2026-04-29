@@ -7,32 +7,37 @@ export function useCountdown() {
   const [windowStartMs, setWindowStartMs] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
 
   const refreshWindow = useCallback(async () => {
-    const mode = (await getSetting('notification_mode')) ?? 'scheduled_fallback';
-    const clearedAt = parseInt((await getSetting('countdown_cleared_at')) ?? '0', 10);
+    try {
+      const mode = (await getSetting('notification_mode')) ?? 'scheduled_fallback';
+      const clearedAt = parseInt((await getSetting('countdown_cleared_at')) ?? '0', 10);
 
-    let windowStart = 0;
+      let windowStart = 0;
 
-    if (mode === 'scheduled' || mode === 'strict' || mode === 'scheduled_fallback') {
-      const hour = parseInt((await getSetting('scheduled_hour')) ?? '8', 10);
-      const now = new Date();
-      const candidate = new Date();
-      candidate.setHours(hour, 0, 0, 0);
-      const candidateMs = candidate.getTime();
-      if (candidateMs <= now.getTime() && clearedAt < candidateMs && now.getTime() - candidateMs < WINDOW_MS) {
-        windowStart = candidateMs;
+      if (mode === 'scheduled' || mode === 'strict' || mode === 'scheduled_fallback') {
+        const hour = parseInt((await getSetting('scheduled_hour')) ?? '8', 10);
+        const now = new Date();
+        const candidate = new Date();
+        candidate.setHours(hour, 0, 0, 0);
+        const candidateMs = candidate.getTime();
+        if (candidateMs <= now.getTime() && clearedAt < candidateMs && now.getTime() - candidateMs < WINDOW_MS) {
+          windowStart = candidateMs;
+        }
       }
-    }
 
-    if (!windowStart && mode !== 'strict' && mode !== 'scheduled') {
-      const lastFired = await getLastFiredNudge();
-      if (lastFired && clearedAt < lastFired) {
-        windowStart = lastFired;
+      if (!windowStart && mode !== 'strict' && mode !== 'scheduled') {
+        const lastFired = await getLastFiredNudge();
+        if (lastFired && clearedAt < lastFired) {
+          windowStart = lastFired;
+        }
       }
-    }
 
-    setWindowStartMs(windowStart);
+      if (mountedRef.current) setWindowStartMs(windowStart);
+    } catch {
+      if (mountedRef.current) setWindowStartMs(0);
+    }
   }, []);
 
   const clearCountdown = useCallback(async () => {
@@ -63,6 +68,13 @@ export function useCountdown() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [windowStartMs]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
 
   return { remainingMs, refreshWindow, clearCountdown };
 }

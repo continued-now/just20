@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
+import { captureInboundAttribution } from '../lib/growth';
 import { linkBuddy } from '../lib/social';
 import { joinSquadRoom } from '../lib/viral';
 
@@ -12,40 +13,67 @@ function firstParam(value: string | string[] | undefined): string {
 
 export default function TeamInviteScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ room?: string; code?: string }>();
+  const params = useLocalSearchParams<{
+    room?: string;
+    code?: string;
+    src?: string;
+    source?: string;
+    campaign?: string;
+    creator?: string;
+  }>();
   const [joining, setJoining] = useState(false);
 
   const roomCode = firstParam(params.room).trim().toUpperCase();
   const buddyCode = firstParam(params.code).trim().toUpperCase();
+  const source = firstParam(params.src) || firstParam(params.source);
+  const campaign = firstParam(params.campaign);
+  const creatorCode = firstParam(params.creator);
   const hasRoom = roomCode.length > 0;
+
+  useEffect(() => {
+    captureInboundAttribution({
+      context: 'team',
+      source,
+      campaign,
+      creatorCode,
+      inviteCode: buddyCode,
+      targetUrl: 'just20://team',
+      metadata: { roomCode },
+    }).catch(() => {});
+  }, [buddyCode, campaign, creatorCode, roomCode, source]);
 
   async function handleJoin() {
     if (!hasRoom || joining) return;
     setJoining(true);
-    const roomResult = await joinSquadRoom(roomCode);
-    if (buddyCode) await linkBuddy(buddyCode);
-    setJoining(false);
+    try {
+      const roomResult = await joinSquadRoom(roomCode);
+      if (buddyCode) await linkBuddy(buddyCode);
 
-    if (!roomResult.success) {
-      Alert.alert('Could not join room', roomResult.error ?? 'This team code could not be joined.');
-      return;
+      if (!roomResult.success) {
+        Alert.alert('Could not join room', roomResult.error ?? 'This team code could not be joined.');
+        return;
+      }
+
+      Alert.alert(
+        'Team room joined',
+        `You are now in ${roomResult.room?.code ?? roomCode}.`,
+        [{ text: 'Go to Squad', onPress: () => router.replace('/(tabs)/squad' as any) }]
+      );
+    } catch {
+      Alert.alert('Could not join room', 'This team code could not be joined.');
+    } finally {
+      setJoining(false);
     }
-
-    Alert.alert(
-      'Team room joined',
-      `You are now in ${roomResult.room?.code ?? roomCode}.`,
-      [{ text: 'Go to Squad', onPress: () => router.replace('/(tabs)/squad' as any) }]
-    );
   }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.wrap}>
+      <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <Text style={styles.kicker}>Team Room</Text>
           <Text style={styles.title}>Daily pressure, shared room.</Text>
           <Text style={styles.body}>
-            Team codes are a lightweight way to onboard offices, creators, friend groups, or school cohorts.
+            Team codes help friends, classmates, coworkers, or group chats start the same daily pushup promise.
           </Text>
 
           <View style={styles.roomBox}>
@@ -70,7 +98,7 @@ export default function TeamInviteScreen() {
             <Text style={styles.secondaryText}>Maybe later</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -78,7 +106,7 @@ export default function TeamInviteScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   wrap: {
-    flex: 1,
+    flexGrow: 1,
     padding: spacing.lg,
     justifyContent: 'center',
   },
@@ -111,10 +139,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   roomBox: {
-    backgroundColor: '#FFF6E8',
+    backgroundColor: colors.streakSoft,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: '#FFD9A8',
+    borderColor: colors.creamDeep,
     padding: spacing.lg,
     alignItems: 'center',
     gap: spacing.xs,

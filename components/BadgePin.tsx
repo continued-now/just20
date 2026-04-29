@@ -61,7 +61,7 @@ export function BadgePin({ badge, size = 88, locked = false, hidden = false }: P
               height: face,
               borderRadius: face / 2,
               backgroundColor: soft,
-              borderColor: '#FFFDF2',
+              borderColor: colors.cream,
             },
           ]}
         >

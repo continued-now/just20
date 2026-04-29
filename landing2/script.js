@@ -5,7 +5,7 @@ const state = {
   xp: 150,
   modeLabel: "Perfect time",
   mode: "perfect",
-  name: "Jake",
+  name: "Alex",
   streak: 7,
 };
 
@@ -64,7 +64,7 @@ function proofLine() {
   }
 
   const remaining = TARGET_REPS - state.reps;
-  return `${remaining} more rep${remaining === 1 ? "" : "s"} until this becomes share bait.`;
+  return `${remaining} more rep${remaining === 1 ? "" : "s"} until your proof card unlocks.`;
 }
 
 function render() {
@@ -159,7 +159,7 @@ calibrateButton?.addEventListener("click", () => {
 
   if (calibrated) {
     if (calibrationTitle) calibrationTitle.textContent = "Camera is guessing";
-    if (calibrationText) calibrationText.textContent = "Tap calibrate to snap the body into frame and raise confidence.";
+    if (calibrationText) calibrationText.textContent = "Tap calibrate to help the camera find your body.";
     calibrateButton.textContent = "Calibrate";
   } else {
     if (calibrationTitle) calibrationTitle.textContent = "Tracking confidence 92%";
@@ -174,12 +174,12 @@ waitlistForm?.addEventListener("submit", (event) => {
   if (!email) return;
 
   localStorage.setItem("just20Landing2Email", email);
-  if (formStatus) formStatus.textContent = "Saved locally for this prototype. Tiny streak gremlin approves.";
+  if (formStatus) formStatus.textContent = "Saved. Tiny streak gremlin approves.";
   waitlistForm.reset();
 });
 
 if (localStorage.getItem("just20Landing2Email") && formStatus) {
-  formStatus.textContent = "You are already saved locally for this prototype.";
+  formStatus.textContent = "You are already on the early squad list.";
 }
 
 buildDots();
