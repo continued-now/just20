@@ -23,6 +23,10 @@ test('validateUsername blocks invalid names', () => {
 
 test('normalizeInviteCode accepts pasted separators', () => {
   assert.equal(normalizeInviteCode(' just abc-234 '), 'JUST-ABC234');
+  assert.equal(
+    normalizeInviteCode('Join my squad:\nhttps://just20.app/challenge?code=JUST-ABC234\n#just20'),
+    'JUST-ABC234'
+  );
 });
 
 test('validateInviteCode enforces Just 20 code shape', () => {

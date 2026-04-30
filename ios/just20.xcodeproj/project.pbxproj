@@ -7,47 +7,72 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		139033EA0C28433D9088449B /* Just20WatchComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EB8EF1B2F264EB9B1FB86AE /* Just20WatchComplication.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		21EA9A4CFD4A4FEB999DAE25 /* Just20SharedStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E1389578C432B90E3E93A /* Just20SharedStatus.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		4F58B3F161E746B78B391058 /* Just20Widget.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */; };
+		58EDB59AE28D4C5784D8F214 /* Just20WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F96E3E51FDC49E280112877 /* Just20WatchApp.swift */; };
+		6B1A7E5B2E4D4F8E98C7E0A1 /* Just20Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D1C73672844225BAE035F8 /* Just20Status.swift */; };
+		83B57D7F3F7A45A6A39F3C5C /* Just20Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D1C73672844225BAE035F8 /* Just20Status.swift */; };
 		912AD2C26D1CF37BB87979F4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B5C690622878CAD324246346 /* PrivacyInfo.xcprivacy */; };
+		962CE5949B2043D2B874078A /* Just20Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D1C73672844225BAE035F8 /* Just20Status.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* Just20SharedStatusBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D4C3B2A19087654321FEDCBA /* Just20SharedStatusBridge.m */; };
+		A48E96DDAD4452EAADA0EFDB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B5C690622878CAD324246346 /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
 		BD8F7D241176E4EFE8233FA7 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353D26A6473F597486454E99 /* ExpoModulesProvider.swift */; };
 		C7EB5CC1ADBAEB290A5A1126 /* libPods-just20.a in Frameworks */ = {isa = PBXBuildFile; fileRef = EFE7CC6CF6A7FEBB39892225 /* libPods-just20.a */; };
-		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		21EA9A4CFD4A4FEB999DAE25 /* Just20SharedStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E1389578C432B90E3E93A /* Just20SharedStatus.swift */; };
-		A1B2C3D4E5F60718293A4B5C /* Just20SharedStatusBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D4C3B2A19087654321FEDCBA /* Just20SharedStatusBridge.m */; };
-		4F58B3F161E746B78B391058 /* Just20Widget.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */; };
 		F04904515412459989D3231F /* Just20Widget.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC1B71BDEFC34E8E97909670 /* Just20Widget.swift */; };
-		962CE5949B2043D2B874078A /* Just20Status.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D1C73672844225BAE035F8 /* Just20Status.swift */; };
-		46738FD7350541928F812064 /* Just20Watch.app in Copy Files */ = {isa = PBXBuildFile; fileRef = 20C2EB38D29A4A65A587068D /* Just20Watch.app */; };
-		58EDB59AE28D4C5784D8F214 /* Just20WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F96E3E51FDC49E280112877 /* Just20WatchApp.swift */; };
-		751F8A0D9F224A5D83DF4038 /* Just20WatchComplication.appex in Copy Files */ = {isa = PBXBuildFile; fileRef = DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */; };
-		139033EA0C28433D9088449B /* Just20WatchComplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EB8EF1B2F264EB9B1FB86AE /* Just20WatchComplication.swift */; };
+		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		528381363007475B86C26962 /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Copy Files";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6573F098B06A499490179EA6 /* Copy Files */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4F58B3F161E746B78B391058 /* Just20Widget.appex in Copy Files */,
+			);
+			name = "Copy Files";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* Just 20.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Just 20.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = just20/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = just20/Info.plist; sourceTree = "<group>"; };
+		1F96E3E51FDC49E280112877 /* Just20WatchApp.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = Just20WatchApp.swift; path = Just20Watch/Just20WatchApp.swift; sourceTree = "<group>"; };
+		20C2EB38D29A4A65A587068D /* Just20Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = Just20Watch.app; path = Just20Watch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		353D26A6473F597486454E99 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-just20/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		5EB8EF1B2F264EB9B1FB86AE /* Just20WatchComplication.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = Just20WatchComplication.swift; path = Just20WatchComplication/Just20WatchComplication.swift; sourceTree = "<group>"; };
+		608E1389578C432B90E3E93A /* Just20SharedStatus.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = Just20SharedStatus.swift; path = just20/Just20SharedStatus.swift; sourceTree = "<group>"; };
 		617FF5A6AD617C5C2338C81A /* Pods-just20.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-just20.release.xcconfig"; path = "Target Support Files/Pods-just20/Pods-just20.release.xcconfig"; sourceTree = "<group>"; };
+		A9D1C73672844225BAE035F8 /* Just20Status.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = Just20Status.swift; path = Just20Shared/Just20Status.swift; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = just20/SplashScreen.storyboard; sourceTree = "<group>"; };
 		B5C690622878CAD324246346 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = just20/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = Just20Widget.appex; path = Just20Widget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
 		BBA82F8214A7FDF7B922202A /* Pods-just20.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-just20.debug.xcconfig"; path = "Target Support Files/Pods-just20/Pods-just20.debug.xcconfig"; sourceTree = "<group>"; };
+		BC1B71BDEFC34E8E97909670 /* Just20Widget.swift */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.swift; name = Just20Widget.swift; path = Just20Widget/Just20Widget.swift; sourceTree = "<group>"; };
+		D4C3B2A19087654321FEDCBA /* Just20SharedStatusBridge.m */ = {isa = PBXFileReference; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = sourcecode.c.objc; name = Just20SharedStatusBridge.m; path = just20/Just20SharedStatusBridge.m; sourceTree = "<group>"; };
+		DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = undefined; name = Just20WatchComplication.appex; path = Just20WatchComplication.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		EFE7CC6CF6A7FEBB39892225 /* libPods-just20.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-just20.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = just20/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* just20-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "just20-Bridging-Header.h"; path = "just20/just20-Bridging-Header.h"; sourceTree = "<group>"; };
-		608E1389578C432B90E3E93A /* Just20SharedStatus.swift */ = {isa = PBXFileReference; name = "Just20SharedStatus.swift"; path = "just20/Just20SharedStatus.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
-		D4C3B2A19087654321FEDCBA /* Just20SharedStatusBridge.m */ = {isa = PBXFileReference; name = "Just20SharedStatusBridge.m"; path = "just20/Just20SharedStatusBridge.m"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; includeInIndex = 0; };
-		B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */ = {isa = PBXFileReference; name = "Just20Widget.appex"; path = "Just20Widget.appex"; sourceTree = BUILT_PRODUCTS_DIR; fileEncoding = undefined; lastKnownFileType = undefined; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; };
-		BC1B71BDEFC34E8E97909670 /* Just20Widget.swift */ = {isa = PBXFileReference; name = "Just20Widget.swift"; path = "Just20Widget/Just20Widget.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
-		A9D1C73672844225BAE035F8 /* Just20Status.swift */ = {isa = PBXFileReference; name = "Just20Status.swift"; path = "Just20Shared/Just20Status.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
-		20C2EB38D29A4A65A587068D /* Just20Watch.app */ = {isa = PBXFileReference; name = "Just20Watch.app"; path = "Just20Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; fileEncoding = undefined; lastKnownFileType = undefined; explicitFileType = "wrapper.application"; includeInIndex = 0; };
-		1F96E3E51FDC49E280112877 /* Just20WatchApp.swift */ = {isa = PBXFileReference; name = "Just20WatchApp.swift"; path = "Just20Watch/Just20WatchApp.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
-		DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */ = {isa = PBXFileReference; name = "Just20WatchComplication.appex"; path = "Just20WatchComplication.appex"; sourceTree = BUILT_PRODUCTS_DIR; fileEncoding = undefined; lastKnownFileType = undefined; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; };
-		5EB8EF1B2F264EB9B1FB86AE /* Just20WatchComplication.swift */ = {isa = PBXFileReference; name = "Just20WatchComplication.swift"; path = "Just20WatchComplication/Just20WatchComplication.swift"; sourceTree = "<group>"; fileEncoding = 4; lastKnownFileType = sourcecode.swift; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,14 +91,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F2F2F3B06DBD479EB2C2A997 /* Frameworks */ = {
+		9488264D97454DABBAC67CDA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		9488264D97454DABBAC67CDA /* Frameworks */ = {
+		F2F2F3B06DBD479EB2C2A997 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -134,6 +159,17 @@
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
+		7A12A74DCA504D20855302CB /* Just20 Companion Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A9D1C73672844225BAE035F8 /* Just20Status.swift */,
+				BC1B71BDEFC34E8E97909670 /* Just20Widget.swift */,
+				1F96E3E51FDC49E280112877 /* Just20WatchApp.swift */,
+				5EB8EF1B2F264EB9B1FB86AE /* Just20WatchComplication.swift */,
+			);
+			name = "Just20 Companion Sources";
+			sourceTree = "<group>";
+		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
 			isa = PBXGroup;
 			children = (
@@ -145,6 +181,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* just20 */,
+				7A12A74DCA504D20855302CB /* Just20 Companion Sources */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -156,17 +193,17 @@
 			tabWidth = 2;
 			usesTabs = 0;
 		};
-			83CBBA001A601CBA00E9B192 /* Products */ = {
-				isa = PBXGroup;
-				children = (
-					13B07F961A680F5B00A75B9A /* Just 20.app */,
-					B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */,
-					20C2EB38D29A4A65A587068D /* Just20Watch.app */,
-					DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */,
-				);
-				name = Products;
-				sourceTree = "<group>";
-			};
+		83CBBA001A601CBA00E9B192 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				13B07F961A680F5B00A75B9A /* Just 20.app */,
+				B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */,
+				20C2EB38D29A4A65A587068D /* Just20Watch.app */,
+				DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -192,7 +229,6 @@
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
 				616B88178171FEA3DE42F5FF /* [CP] Embed Pods Frameworks */,
 				6573F098B06A499490179EA6 /* Copy Files */,
-				B76CE7204DC0432BA64E589F /* Embed Watch Content */,
 				528381363007475B86C26962 /* Copy Files */,
 			);
 			buildRules = (
@@ -204,13 +240,9 @@
 			productReference = 13B07F961A680F5B00A75B9A /* Just 20.app */;
 			productType = "com.apple.product-type.application";
 		};
-		644F656978D74505A2483797 /* "Just20Widget" */ = {
+		644F656978D74505A2483797 /* Just20Widget */ = {
 			isa = PBXNativeTarget;
-			name = "Just20Widget";
-			productName = "Just20Widget";
-			productReference = B80DAD9C1D7E48D1940DFB9A;
-			productType = "com.apple.product-type.app-extension";
-			buildConfigurationList = 0CA53FF6BFEC42139FCA20FE;
+			buildConfigurationList = 0CA53FF6BFEC42139FCA20FE /* Build configuration list for PBXNativeTarget "Just20Widget" */;
 			buildPhases = (
 				70A5C01393654F6AB223C7A4 /* Sources */,
 				1D0963F267314146B77A49F2 /* Frameworks */,
@@ -220,14 +252,14 @@
 			);
 			dependencies = (
 			);
+			name = Just20Widget;
+			productName = Just20Widget;
+			productReference = B80DAD9C1D7E48D1940DFB9A /* Just20Widget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
-		AF6CD2CB8432463DAD5B6AC4 /* "Just20Watch" */ = {
+		AF6CD2CB8432463DAD5B6AC4 /* Just20Watch */ = {
 			isa = PBXNativeTarget;
-			name = "Just20Watch";
-			productName = "Just20Watch";
-			productReference = 20C2EB38D29A4A65A587068D;
-			productType = "com.apple.product-type.application";
-			buildConfigurationList = 86D31209BA034CBC86021B92;
+			buildConfigurationList = 86D31209BA034CBC86021B92 /* Build configuration list for PBXNativeTarget "Just20Watch" */;
 			buildPhases = (
 				454A1271270F4EE9ADF184E2 /* Sources */,
 				F2F2F3B06DBD479EB2C2A997 /* Frameworks */,
@@ -237,14 +269,14 @@
 			);
 			dependencies = (
 			);
+			name = Just20Watch;
+			productName = Just20Watch;
+			productReference = 20C2EB38D29A4A65A587068D /* Just20Watch.app */;
+			productType = "com.apple.product-type.application";
 		};
-		F09071C72E464CBAA924E322 /* "Just20WatchComplication" */ = {
+		F09071C72E464CBAA924E322 /* Just20WatchComplication */ = {
 			isa = PBXNativeTarget;
-			name = "Just20WatchComplication";
-			productName = "Just20WatchComplication";
-			productReference = DEE59B8503D941C996ABEAB7;
-			productType = "com.apple.product-type.app-extension";
-			buildConfigurationList = 6E859CD6F5A241969B99703A;
+			buildConfigurationList = 6E859CD6F5A241969B99703A /* Build configuration list for PBXNativeTarget "Just20WatchComplication" */;
 			buildPhases = (
 				99BC10CD823E4DC1BE64E693 /* Sources */,
 				9488264D97454DABBAC67CDA /* Frameworks */,
@@ -254,6 +286,10 @@
 			);
 			dependencies = (
 			);
+			name = Just20WatchComplication;
+			productName = Just20WatchComplication;
+			productReference = DEE59B8503D941C996ABEAB7 /* Just20WatchComplication.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -282,9 +318,9 @@
 			projectRoot = "";
 			targets = (
 				13B07F861A680F5B00A75B9A /* just20 */,
-				644F656978D74505A2483797 /* "Just20Widget" */,
-				AF6CD2CB8432463DAD5B6AC4 /* "Just20Watch" */,
-				F09071C72E464CBAA924E322 /* "Just20WatchComplication" */,
+				644F656978D74505A2483797 /* Just20Widget */,
+				AF6CD2CB8432463DAD5B6AC4 /* Just20Watch */,
+				F09071C72E464CBAA924E322 /* Just20WatchComplication */,
 			);
 		};
 /* End PBXProject section */
@@ -301,14 +337,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		69B8E3E59A4F47F4BB79CB0A /* Resources */ = {
+		1FA13069AD92426C8FC7B3CA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A48E96DDAD4452EAADA0EFDB /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		1FA13069AD92426C8FC7B3CA /* Resources */ = {
+		69B8E3E59A4F47F4BB79CB0A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -426,6 +463,8 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-Core/React-Core_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/React-cxxreact/React-cxxreact_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/TensorFlowLiteC/TensorFlowLiteC.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-launcher/EXDevLauncher.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/expo-dev-menu/EXDevMenu.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/lottie-ios/LottiePrivacyInfo.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/lottie-react-native/Lottie_React_Native_Privacy.bundle",
 			);
@@ -440,6 +479,8 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-Core_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/React-cxxreact_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/TensorFlowLiteC.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevLauncher.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXDevMenu.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/LottiePrivacyInfo.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Lottie_React_Native_Privacy.bundle",
 			);
@@ -462,6 +503,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		454A1271270F4EE9ADF184E2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				58EDB59AE28D4C5784D8F214 /* Just20WatchApp.swift in Sources */,
+				6B1A7E5B2E4D4F8E98C7E0A1 /* Just20Status.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		70A5C01393654F6AB223C7A4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -471,21 +521,12 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		454A1271270F4EE9ADF184E2 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				58EDB59AE28D4C5784D8F214 /* Just20WatchApp.swift in Sources */,
-				962CE5949B2043D2B874078A /* Just20Status.swift" in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		99BC10CD823E4DC1BE64E693 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				139033EA0C28433D9088449B /* Just20WatchComplication.swift in Sources */,
-				962CE5949B2043D2B874078A /* Just20Status.swift" in Sources */,
+				83B57D7F3F7A45A6A39F3C5C /* Just20Status.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -557,6 +598,59 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
+		};
+		3DC80F49CE4740E1B95AC83B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Just20WatchComplication/Just20WatchComplication.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20WatchComplication/Just20WatchComplication-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp.complication;
+				PRODUCT_NAME = Just20WatchComplication;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9;
+			};
+			name = Release;
+		};
+		4522C127F2014C0F9A8472F6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Just20Watch/Just20Watch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20Watch/Just20Watch-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp;
+				PRODUCT_NAME = Just20Watch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 9;
+			};
+			name = Debug;
 		};
 		83CBBA201A601CBA00E9B192 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -676,157 +770,116 @@
 			};
 			name = Release;
 		};
-		FA7EA5488F974504AF050F5A /* Debug */ = {
-			name = Debug;
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				INFOPLIST_FILE = Just20Widget/Just20Widget-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20Widget;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.widget;
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = Just20Widget/Just20Widget.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				IPHONEOS_DEPLOYMENT_TARGET = 16;
-				MARKETING_VERSION = 1;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-		};
-		FFAA2E8B197E4846BA5E54A5 /* Release */ = {
-			name = Release;
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INFOPLIST_FILE = Just20Widget/Just20Widget-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20Widget;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.widget;
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = Just20Widget/Just20Widget.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				IPHONEOS_DEPLOYMENT_TARGET = 16;
-				MARKETING_VERSION = 1;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-		};
-		4522C127F2014C0F9A8472F6 /* Debug */ = {
-			name = Debug;
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				INFOPLIST_FILE = Just20Watch/Just20Watch-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20Watch;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp;
-				CODE_SIGN_ENTITLEMENTS = Just20Watch/Just20Watch.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = NO;
-				MARKETING_VERSION = 1;
-				SDKROOT = watchos;
-				SWIFT_VERSION = 5;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9;
-			};
-		};
 		BEA0E69433EC433BA8228971 /* Release */ = {
-			name = Release;
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INFOPLIST_FILE = Just20Watch/Just20Watch-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20Watch;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp;
 				CODE_SIGN_ENTITLEMENTS = Just20Watch/Just20Watch.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20Watch/Just20Watch-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp;
+				PRODUCT_NAME = Just20Watch;
 				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 9;
 			};
+			name = Release;
 		};
 		C644BD5BEFF54DB8B998F695 /* Debug */ = {
-			name = Debug;
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Just20WatchComplication/Just20WatchComplication.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
-				INFOPLIST_FILE = Just20WatchComplication/Just20WatchComplication-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20WatchComplication;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp.complication;
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = Just20WatchComplication/Just20WatchComplication.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20WatchComplication/Just20WatchComplication-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp.complication;
+				PRODUCT_NAME = Just20WatchComplication;
 				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 9;
 			};
+			name = Debug;
 		};
-		3DC80F49CE4740E1B95AC83B /* Release */ = {
-			name = Release;
+		FA7EA5488F974504AF050F5A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				INFOPLIST_FILE = Just20WatchComplication/Just20WatchComplication-Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_NAME = Just20WatchComplication;
-				SKIP_INSTALL = YES;
-				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.watchkitapp.complication;
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = Just20WatchComplication/Just20WatchComplication.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Just20Widget/Just20Widget.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20Widget/Just20Widget-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 16;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.widget;
+				PRODUCT_NAME = Just20Widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FFAA2E8B197E4846BA5E54A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Just20Widget/Just20Widget.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Just20Widget/Just20Widget-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 16;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
 				MARKETING_VERSION = 1;
-				SDKROOT = watchos;
+				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
+				PRODUCT_BUNDLE_IDENTIFIER = com.anonymous.just20.widget;
+				PRODUCT_NAME = Just20Widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 9;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
+			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "just20" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				13B07F941A680F5B00A75B9A /* Debug */,
-				13B07F951A680F5B00A75B9A /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "just20" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				83CBBA201A601CBA00E9B192 /* Debug */,
-				83CBBA211A601CBA00E9B192 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		0CA53FF6BFEC42139FCA20FE /* Build configuration list for PBXNativeTarget "Just20Widget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -836,11 +889,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		86D31209BA034CBC86021B92 /* Build configuration list for PBXNativeTarget "Just20Watch" */ = {
+		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "just20" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				4522C127F2014C0F9A8472F6 /* Debug */,
-				BEA0E69433EC433BA8228971 /* Release */,
+				13B07F941A680F5B00A75B9A /* Debug */,
+				13B07F951A680F5B00A75B9A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -854,43 +907,25 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "just20" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				83CBBA201A601CBA00E9B192 /* Debug */,
+				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		86D31209BA034CBC86021B92 /* Build configuration list for PBXNativeTarget "Just20Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4522C127F2014C0F9A8472F6 /* Debug */,
+				BEA0E69433EC433BA8228971 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		6573F098B06A499490179EA6 /* Copy Files */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				4F58B3F161E746B78B391058 /* Just20Widget.appex in Copy Files */,
-				751F8A0D9F224A5D83DF4038 /* Just20WatchComplication.appex in Copy Files */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			name = "Copy Files";
-			dstPath = "";
-			dstSubfolderSpec = 13;
-		};
-		B76CE7204DC0432BA64E589F /* Embed Watch Content */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				46738FD7350541928F812064 /* "Just20Watch.app" in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			name = "Embed Watch Content";
-			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
-		};
-		528381363007475B86C26962 /* Copy Files */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			name = "Copy Files";
-			dstPath = "";
-			dstSubfolderSpec = 13;
-		};
-/* End PBXCopyFilesBuildPhase section */
 	};
 	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
 }

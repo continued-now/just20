@@ -186,6 +186,10 @@ export default function RootLayout() {
           name="onboarding"
           options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }}
         />
+        <Stack.Screen
+          name="launch"
+          options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }}
+        />
       </Stack>
     </>
   );

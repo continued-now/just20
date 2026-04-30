@@ -2,7 +2,6 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   PanResponder,
@@ -27,7 +26,6 @@ import {
 import { markOnboardingComplete, updateUsername } from '../lib/user';
 import { validateUsername } from '../lib/validation';
 
-const { width } = Dimensions.get('window');
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 6);
 const TOTAL_STEPS = 4;
 
@@ -110,7 +108,13 @@ export default function OnboardingScreen() {
     await setSetting('scheduled_hour', String(scheduledHour));
     await setSetting('notifications_enabled', notificationsEnabled ? '1' : '0');
     await markOnboardingComplete();
-    router.replace('/');
+    router.replace({
+      pathname: '/launch',
+      params: {
+        scheduledHour: String(scheduledHour),
+        notificationsEnabled: notificationsEnabled ? '1' : '0',
+      },
+    });
   }
 
   async function handleAllow() {
@@ -210,7 +214,9 @@ function Step0({ onNext }: { onNext: () => void }) {
       <Text style={styles.subheadline}>20 pushups.{'\n'}Every day.{'\n'}No excuses.</Text>
       <Text style={styles.body}>No equipment. No gym. Just you and the floor.</Text>
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>{"LET'S GO ->"}</Text>
+        <Text style={styles.btnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+          {"LET'S GO ->"}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -245,7 +251,9 @@ function Step1({
       />
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>{username.trim() ? 'LOOKS GOOD ->' : 'SKIP ->'}</Text>
+        <Text style={styles.btnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+          {username.trim() ? 'LOOKS GOOD ->' : 'SKIP ->'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -260,41 +268,20 @@ function Step2({
   onHourChange: (hour: number) => void;
   onNext: () => void;
 }) {
-  const today = new Date();
-  const miniCal = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (6 - i));
-    return {
-      label: d.toLocaleDateString('en-US', { weekday: 'short' }),
-      done: i < 5,
-      isToday: i === 6,
-    };
-  });
-
   return (
-    <View style={styles.step}>
+    <View style={[styles.step, styles.stepTight]}>
       <MascotBounce emoji="🔥" />
-      <Text style={styles.headline}>Pick your{'\n'}daily window.</Text>
-      <Text style={styles.body}>Choose the time you can defend. Miss a day and the streak resets.</Text>
+      <Text style={styles.headline}>Every day.</Text>
+      <Text style={styles.body}>Set the hour. Just 20 opens the same 10-minute window daily.</Text>
 
-      <View style={styles.calDemo}>
-        {miniCal.map((d, i) => (
-          <View key={i} style={styles.calCol}>
-            <View style={[styles.calDot, d.done ? styles.calDotDone : d.isToday ? styles.calDotToday : styles.calDotMiss]}>
-              {d.done && <Text style={styles.calCheck}>✓</Text>}
-            </View>
-            <Text style={[styles.calLabel, d.isToday && styles.calLabelToday]}>{d.label}</Text>
+      <View style={[styles.timePicker, styles.timePickerPrimary]}>
+        <View style={styles.timePickerTop}>
+          <View>
+            <Text style={styles.timePickerLabel}>Daily reminder time</Text>
+            <Text style={styles.timePickerHint}>Runs every day</Text>
           </View>
-        ))}
-      </View>
-
-      <View style={styles.noteRow}>
-        <Text style={styles.noteEmoji}>🔥</Text>
-        <Text style={styles.noteText}>Every completed day extends the streak. Earn freeze tokens later by staying consistent.</Text>
-      </View>
-
-      <View style={styles.timePicker}>
-        <Text style={styles.timePickerLabel}>Reminder window</Text>
+          <Text style={styles.timePickerValue}>{formatHour(scheduledHour)}</Text>
+        </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -313,10 +300,22 @@ function Step2({
             </TouchableOpacity>
           ))}
         </ScrollView>
+        <Text style={styles.timePickerFootnote}>
+          The time changes reminders only. The streak always expects one completion per day.
+        </Text>
+      </View>
+
+      <View style={styles.dailyRuleCard}>
+        <Text style={styles.dailyRuleKicker}>Fixed daily rule</Text>
+        <Text style={styles.dailyRuleText}>
+          Do 20 once a day to keep the streak alive. No weekday picker, no off days in setup.
+        </Text>
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>USE {formatHour(scheduledHour).toUpperCase()} →</Text>
+        <Text style={styles.btnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+          SET {formatHour(scheduledHour).toUpperCase()} →
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -363,7 +362,9 @@ function Step3({
         onPress={onAllow}
         disabled={submitting}
       >
-        <Text style={styles.btnText}>{submitting ? 'SAVING...' : 'ALLOW NOTIFICATIONS →'}</Text>
+        <Text style={styles.btnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+          {submitting ? 'SAVING...' : 'ALLOW NOTIFICATIONS →'}
+        </Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={onSkip} style={styles.skipBtn} disabled={submitting}>
         <Text style={styles.skipText}>skip (not recommended)</Text>
@@ -394,23 +395,25 @@ const styles = StyleSheet.create({
   contentScroll: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingVertical: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
   },
 
   step: {
     paddingHorizontal: spacing.xl,
-    gap: spacing.lg,
+    gap: spacing.md,
     alignItems: 'center',
   },
+  stepTight: { gap: spacing.md },
 
-  mascot: { fontSize: 72 },
+  mascot: { fontSize: 64 },
   headline: {
-    fontSize: 42,
+    fontSize: 40,
     fontWeight: '900',
     color: colors.text,
     textAlign: 'center',
-    lineHeight: 46,
-    letterSpacing: -1.4,
+    lineHeight: 44,
+    letterSpacing: 0,
   },
   subheadline: {
     fontSize: 36,
@@ -452,17 +455,20 @@ const styles = StyleSheet.create({
   btn: {
     backgroundColor: colors.text,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
     borderRadius: radius.full,
-    minWidth: width * 0.7,
+    alignSelf: 'stretch',
+    minHeight: 52,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   btnDisabled: { opacity: 0.62 },
   btnText: {
     color: colors.bg,
     fontSize: fontSize.md,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0,
+    textAlign: 'center',
   },
   skipBtn: { paddingVertical: spacing.sm },
   skipText: {
@@ -471,47 +477,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textDecorationLine: 'underline',
   },
-
-  // Mini calendar (Step 2)
-  calDemo: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignSelf: 'stretch',
-    justifyContent: 'space-between',
-  },
-  calCol: { alignItems: 'center', gap: 4 },
-  calDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  calDotDone: { backgroundColor: colors.success },
-  calDotMiss: { backgroundColor: colors.border },
-  calDotToday: { backgroundColor: colors.border, borderWidth: 2, borderColor: colors.streak },
-  calCheck: { color: '#FFF', fontSize: 14, fontWeight: '800' },
-  calLabel: { fontSize: 10, color: colors.subtext, fontWeight: '600' },
-  calLabelToday: { color: colors.streak, fontWeight: '800' },
-
-  noteRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignSelf: 'stretch',
-  },
-  noteEmoji: { fontSize: 20 },
-  noteText: { flex: 1, fontSize: fontSize.sm, color: colors.subtext, fontWeight: '500', lineHeight: 18 },
 
   timePicker: {
     alignSelf: 'stretch',
@@ -522,12 +487,40 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
+  timePickerPrimary: {
+    borderColor: colors.brand,
+    backgroundColor: colors.cream,
+  },
+  timePickerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   timePickerLabel: {
     fontSize: fontSize.xs,
     fontWeight: '800',
     color: colors.subtext,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
+    letterSpacing: 0,
+  },
+  timePickerHint: {
+    marginTop: 2,
+    fontSize: fontSize.sm,
+    color: colors.text,
+    fontWeight: '800',
+  },
+  timePickerValue: {
+    fontSize: fontSize.xl,
+    fontWeight: '900',
+    color: colors.text,
+    lineHeight: 32,
+  },
+  timePickerFootnote: {
+    fontSize: fontSize.xs,
+    color: colors.subtext,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   hourRow: {
     flexDirection: 'row',
@@ -552,6 +545,28 @@ const styles = StyleSheet.create({
     color: colors.subtext,
   },
   hourChipTextActive: { color: colors.bg },
+  dailyRuleCard: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.brandSoft,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  dailyRuleKicker: {
+    fontSize: fontSize.xs,
+    color: colors.brandDark,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0,
+  },
+  dailyRuleText: {
+    fontSize: fontSize.sm,
+    color: colors.text,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
 
   // Mechanic card (Step 3)
   mechCard: {
@@ -608,7 +623,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 8,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
     paddingTop: spacing.sm,
   },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },

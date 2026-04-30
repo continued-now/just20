@@ -64,6 +64,11 @@ export function validateUsername(
 
 export function normalizeInviteCode(input: string): string {
   const compact = input.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const explicitCodes = [...compact.matchAll(/JUST([A-HJ-NP-Z2-9]{6})/g)];
+  if (explicitCodes.length > 0) {
+    const body = explicitCodes[explicitCodes.length - 1][1];
+    return `JUST-${body}`;
+  }
   const body = compact.startsWith('JUST') ? compact.slice(4) : compact;
   return body ? `JUST-${body}` : '';
 }

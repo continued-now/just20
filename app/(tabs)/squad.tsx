@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -71,6 +72,8 @@ export default function SquadScreen() {
   const [data, setData] = useState<PageData | null>(null);
   const [codeInput, setCodeInput] = useState('');
   const [roomInput, setRoomInput] = useState('');
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [pastedInviteCode, setPastedInviteCode] = useState(false);
   const [linking, setLinking] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
@@ -155,6 +158,23 @@ export default function SquadScreen() {
       }),
       'squad_code'
     );
+  }
+
+  async function handleCopyInviteCode() {
+    if (!data?.inviteCode) return;
+    await Clipboard.setStringAsync(data.inviteCode);
+    setInviteCopied(true);
+  }
+
+  async function handlePasteInviteCode() {
+    const pasted = await Clipboard.getStringAsync();
+    const validation = validateInviteCode(pasted);
+    if (validation.error || !validation.code) {
+      Alert.alert('Nothing pasted', 'Copy a Just 20 invite code first.');
+      return;
+    }
+    setCodeInput(validation.code);
+    setPastedInviteCode(true);
   }
 
   async function handleShareChallenge() {
@@ -519,7 +539,17 @@ export default function SquadScreen() {
           {/* Your invite code */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Your Code</Text>
-            <Text style={styles.inviteCode}>{data?.inviteCode ?? '—'}</Text>
+            <View style={styles.inviteCodeBox}>
+              <Text style={styles.inviteCode}>{data?.inviteCode ?? '—'}</Text>
+              <TouchableOpacity
+                style={styles.copyCodeBtn}
+                onPress={handleCopyInviteCode}
+                activeOpacity={0.78}
+                disabled={!data?.inviteCode}
+              >
+                <Text style={styles.copyCodeText}>{inviteCopied ? 'COPIED' : 'COPY'}</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.codeHint}>
               Share this code with friends so they can add you.{'\n'}
               Works on Instagram, KakaoTalk, WeChat — anywhere.
@@ -539,13 +569,23 @@ export default function SquadScreen() {
                 placeholder="JUST-XXXXXX"
                 placeholderTextColor={colors.subtext}
                 value={codeInput}
-                onChangeText={(t) => setCodeInput(t.toUpperCase().replace(/[^A-Z0-9- ]/g, ''))}
+                onChangeText={(t) => {
+                  setCodeInput(t.toUpperCase().replace(/[^A-Z0-9- ]/g, ''));
+                  setPastedInviteCode(false);
+                }}
                 autoCapitalize="characters"
                 autoCorrect={false}
                 maxLength={11}
                 returnKeyType="done"
                 onSubmitEditing={handleLink}
               />
+              <TouchableOpacity
+                style={styles.pasteBtn}
+                onPress={handlePasteInviteCode}
+                activeOpacity={0.78}
+              >
+                <Text style={styles.pasteBtnText}>{pastedInviteCode ? 'PASTED' : 'PASTE'}</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.linkBtn, (!codeInput.trim() || linking) && styles.linkBtnDisabled]}
                 onPress={handleLink}
@@ -930,12 +970,32 @@ const styles = StyleSheet.create({
   },
 
   // Invite code
+  inviteCodeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    flexWrap: 'wrap',
+  },
   inviteCode: {
     fontSize: 32,
     fontWeight: '900',
     color: colors.text,
     letterSpacing: 2,
     textAlign: 'center',
+  },
+  copyCodeBtn: {
+    borderRadius: radius.full,
+    backgroundColor: colors.brandSoft,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  copyCodeText: {
+    color: colors.brandDark,
+    fontSize: fontSize.xs,
+    fontWeight: '900',
   },
   codeHint: {
     fontSize: fontSize.xs,
@@ -971,6 +1031,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     letterSpacing: 1,
+  },
+  pasteBtn: {
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+  },
+  pasteBtnText: {
+    color: colors.text,
+    fontWeight: '900',
+    fontSize: fontSize.xs,
   },
   linkBtn: {
     backgroundColor: colors.streak,

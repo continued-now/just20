@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -28,6 +29,7 @@ type ProfileData = {
 export default function ProfileScreen() {
   const router = useRouter();
   const [data, setData] = useState<ProfileData | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   useFocusEffect(
@@ -87,6 +89,12 @@ export default function ProfileScreen() {
       }),
       'profile_invite'
     );
+  }
+
+  async function handleCopyInviteCode() {
+    await Clipboard.setStringAsync(inviteCode);
+    await Haptics.selectionAsync();
+    setInviteCopied(true);
   }
 
   async function handleShareChallenge() {
@@ -153,6 +161,13 @@ export default function ProfileScreen() {
             <View style={styles.invitePill}>
               <Text style={styles.inviteLabel}>Invite code</Text>
               <Text style={styles.inviteCode}>{inviteCode}</Text>
+              <TouchableOpacity
+                style={styles.inviteCopyBtn}
+                onPress={handleCopyInviteCode}
+                activeOpacity={0.78}
+              >
+                <Text style={styles.inviteCopyText}>{inviteCopied ? 'Copied' : 'Copy'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -418,6 +433,17 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '900',
     flexShrink: 1,
+  },
+  inviteCopyBtn: {
+    borderRadius: radius.full,
+    backgroundColor: colors.brandSoft,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  inviteCopyText: {
+    color: colors.brandDark,
+    fontSize: fontSize.xs,
+    fontWeight: '900',
   },
   statGrid: {
     flexDirection: 'row',
