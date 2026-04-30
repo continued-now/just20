@@ -5,7 +5,6 @@ import * as Sharing from 'expo-sharing';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { MILESTONE_COPY } from '../lib/milestones';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedView = Animated.View as any;
 
 const CONFETTI_COLORS = [colors.streak, colors.accent, colors.brand, colors.ice, colors.yellow];
@@ -66,14 +65,14 @@ export function MilestoneCelebration({ streak, visible, onDismiss }: Props) {
       ])
     );
     Animated.parallel(anims).start();
-  }, [visible]);
+  }, [particles, scaleAnim, visible]);
 
   async function handleShare() {
     if (!cardRef.current) return;
     try {
       const uri = await (cardRef.current as any).capture();
       await Sharing.shareAsync(uri, { mimeType: 'image/png' });
-    } catch (_) {}
+    } catch {}
   }
 
   return (

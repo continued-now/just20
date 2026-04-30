@@ -79,7 +79,7 @@ const PERFORMANCE_CONFIG = Constants.isDevice
   ? DEVICE_PERFORMANCE_CONFIG
   : EMULATOR_PERFORMANCE_CONFIG;
 
-const SKELETON_LINKS: Array<[number, number]> = [
+const SKELETON_LINKS: [number, number][] = [
   [KP.LEFT_SHOULDER, KP.RIGHT_SHOULDER],
   [KP.LEFT_SHOULDER, KP.LEFT_ELBOW],
   [KP.LEFT_ELBOW, KP.LEFT_WRIST],
@@ -303,7 +303,6 @@ export default function WorkoutScreen() {
   const usingFallbackCamera = !frontDevice && !!backDevice;
   const workoutMode: WorkoutMode = params.mode === 'test' ? 'test' : params.mode === 'duel' ? 'duel' : 'daily';
   const isTestMode = workoutMode === 'test';
-  const isDuelMode = workoutMode === 'duel';
   const requestedRecoveryType: RecoveryType =
     params.recoveryType === 'streak_patch' || params.recoveryType === 'debt_set'
       ? params.recoveryType
@@ -321,6 +320,8 @@ export default function WorkoutScreen() {
     : STANDARD_TARGET;
   const duelTarget = Math.max(10, Number.parseInt(params.duelTarget ?? '60', 10) || 60);
   const performanceConfig = PERFORMANCE_CONFIG;
+  // react-native-fast-tflite requires bundled models to be passed as RN asset IDs.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const model = useTensorflowModel(require('../assets/model/movenet_lightning.tflite'));
   const { resize } = useResizePlugin();
 
@@ -357,6 +358,8 @@ export default function WorkoutScreen() {
   const screenOpenedAtRef = useRef(Date.now());
   const modelLoadStartRef = useRef(Date.now());
   const cameraReadyLoggedRef = useRef(false);
+  const targetRepsRef = useRef(targetReps);
+  const handleFinishRef = useRef<(() => Promise<void>) | null>(null);
 
   // Worklet-accessible shared state
   const wentDown = useSharedValue(false);
@@ -454,6 +457,10 @@ export default function WorkoutScreen() {
     repConfidenceMin.value = isTestMode ? TEST_REP_CONFIDENCE_MIN : ACTIVE_REP_CONFIDENCE_MIN;
   }, [isTestMode, repConfidenceMin]);
 
+  useEffect(() => {
+    targetRepsRef.current = targetReps;
+  }, [targetReps]);
+
   // MoveNet TFLite uses RGB [0,255]; avoid float buffers unless the loaded model requires them.
   useEffect(() => {
     if (model.state !== 'loaded') return;
@@ -523,7 +530,7 @@ export default function WorkoutScreen() {
       });
       setReps(count);
       setFeedback(fb);
-      if (count >= targetReps && !finishedRef.current) {
+      if (count >= targetRepsRef.current && !finishedRef.current) {
         finishedRef.current = true;
         setFinished(true);
       }
@@ -593,7 +600,7 @@ export default function WorkoutScreen() {
         milestoneClearRef.current = setTimeout(() => setMilestoneMsg(null), 1800);
       }
     }
-  }, [reps]);
+  }, [reps, targetReps]);
 
   // 3-2-1 countdown
   useEffect(() => {
@@ -1192,6 +1199,8 @@ export default function WorkoutScreen() {
     }
   }
 
+  handleFinishRef.current = handleFinish;
+
   function handleClose() {
     if (started && reps > 0) {
       setCameraPaused(true);
@@ -1240,7 +1249,9 @@ export default function WorkoutScreen() {
 
   useEffect(() => {
     if (finished) {
-      const t = setTimeout(handleFinish, 600);
+      const t = setTimeout(() => {
+        handleFinishRef.current?.();
+      }, 600);
       return () => clearTimeout(t);
     }
   }, [finished]);

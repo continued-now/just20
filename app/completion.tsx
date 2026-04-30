@@ -46,6 +46,20 @@ import { useGrowthImageShare } from '../hooks/useGrowthImageShare';
 const CARD_BG = '#0F0F0F';
 const WEEKLY_CHEST_TARGET = 5;
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
+type CompletionLoadResult = {
+  streakCurrent: number;
+  isPersonalBest: boolean;
+  setsToday: number;
+  completedRepsToday: number;
+  completedDaysThisWeek: number;
+  totalSessions: number;
+  inviteCode: string;
+  dailyQuote: string;
+  recoverySummary: SessionRecoverySummary | null;
+  reward: WorkoutXpReward | null;
+  badgeRewards: BadgeUnlockResult[];
+  totalXp: number;
+};
 
 export default function CompletionScreen() {
   const {
@@ -75,6 +89,10 @@ export default function CompletionScreen() {
   }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
+  const rewardEventRunRef = useRef<{
+    eventId: string;
+    promise: Promise<CompletionLoadResult>;
+  } | null>(null);
   const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   const repCount = parseInt(reps ?? '20', 10);
@@ -162,71 +180,115 @@ export default function CompletionScreen() {
   useEffect(() => {
     let mounted = true;
 
-    (async () => {
-      try {
-        const numericSessionId = Number.parseInt(sessionId ?? '', 10);
-        const [s, best, sets, dailyReps, daysThisWeek, seed, user, recovery] = await Promise.all([
-          getStreak(),
-          getBestCompletedTime(),
-          getCompletedSetsToday(),
-          getCompletedRepsToday(),
-          getCompletedDaysThisWeek(),
-          getUserSeed(),
-          getOrCreateUser(),
-          getSessionRecoverySummary(Number.isFinite(numericSessionId) ? numericSessionId : null),
-        ]);
+    const existingRun = rewardEventRunRef.current;
+    const promise =
+      existingRun?.eventId === sessionEventId
+        ? existingRun.promise
+        : (async (): Promise<CompletionLoadResult> => {
+            const numericSessionId = Number.parseInt(sessionId ?? '', 10);
+            const [s, best, sets, dailyReps, daysThisWeek, seed, user, recovery] =
+              await Promise.all([
+                getStreak(),
+                getBestCompletedTime(),
+                getCompletedSetsToday(),
+                getCompletedRepsToday(),
+                getCompletedDaysThisWeek(),
+                getUserSeed(),
+                getOrCreateUser(),
+                getSessionRecoverySummary(
+                  Number.isFinite(numericSessionId) ? numericSessionId : null
+                ),
+              ]);
+            let earned: WorkoutXpReward | null = null;
+            if (repCount >= 20) {
+              // XP claims are date-idempotent in storage; this promise keeps React effect replay from
+              // racing the claim while still allowing the screen to receive the eventual result.
+              earned = await awardWorkoutXp(s.current, {
+                nudgesUsed: nudgeCountAtCompletion,
+                trackingMethod: sessionTrackingMethod,
+                manualAdjustments: manualAdjustmentCount,
+              });
+              void syncCompletionToCloud(s.current);
+            }
+
+            const unlockedBadges =
+              sessionRecoveryType === 'none'
+                ? await evaluateBadgeUnlocks({
+                    event: isTestMode ? 'monthly_test_completed' : 'workout_completed',
+                    reps: repCount,
+                    durationMs,
+                    mode: workoutMode,
+                    manualAdjustments: manualAdjustmentCount,
+                    trackingMethod: sessionTrackingMethod,
+                    nudgesUsed: nudgeCountAtCompletion,
+                    eventId: sessionEventId,
+                  })
+                : [];
+            const xp = await getXp();
+            scheduleSharedJust20StatusUpdate();
+
+            return {
+              streakCurrent: s.current,
+              isPersonalBest:
+                repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best,
+              setsToday: sets,
+              completedRepsToday: Math.max(dailyReps, repCount),
+              completedDaysThisWeek: daysThisWeek,
+              totalSessions: s.totalSessions,
+              inviteCode: user.inviteCode,
+              dailyQuote: getDailyQuote(seed),
+              recoverySummary: recovery,
+              reward: earned,
+              badgeRewards: unlockedBadges,
+              totalXp: xp.totalEarned,
+            };
+          })();
+
+    if (existingRun?.eventId !== sessionEventId) {
+      rewardEventRunRef.current = { eventId: sessionEventId, promise };
+    }
+
+    promise
+      .then((result) => {
         if (!mounted) return;
-        setStreak(s.current);
-        setSetsToday(sets);
-        setCompletedRepsToday(Math.max(dailyReps, repCount));
-        setCompletedDaysThisWeek(daysThisWeek);
-        setTotalSessions(s.totalSessions);
-        setInviteCode(user.inviteCode);
-        setDailyQuote(getDailyQuote(seed));
-        setRecoverySummary(recovery);
-        if (repCount >= 20 && best !== null && durationMs > 0 && durationMs <= best) {
-          setIsPB(true);
+        setStreak(result.streakCurrent);
+        setSetsToday(result.setsToday);
+        setCompletedRepsToday(result.completedRepsToday);
+        setCompletedDaysThisWeek(result.completedDaysThisWeek);
+        setTotalSessions(result.totalSessions);
+        setInviteCode(result.inviteCode);
+        setDailyQuote(result.dailyQuote);
+        setRecoverySummary(result.recoverySummary);
+        setIsPB(result.isPersonalBest);
+        setReward(result.reward);
+        setBadgeRewards(result.badgeRewards);
+        setTotalXp(result.totalXp);
+      })
+      .catch((error) => {
+        if (rewardEventRunRef.current?.eventId === sessionEventId) {
+          rewardEventRunRef.current = null;
         }
-        // Test-mode attempts under 20 reps are receipts, not daily completions.
-        if (repCount >= 20) {
-          const earned = await awardWorkoutXp(s.current, {
-            nudgesUsed: nudgeCountAtCompletion,
-            trackingMethod: sessionTrackingMethod,
-            manualAdjustments: manualAdjustmentCount,
-          });
-          if (!mounted) return;
-          setReward(earned);
-          syncCompletionToCloud(s.current); // fire-and-forget
-        }
-        if (sessionRecoveryType === 'none') {
-          const unlockedBadges = await evaluateBadgeUnlocks({
-            event: isTestMode ? 'monthly_test_completed' : 'workout_completed',
-            reps: repCount,
-            durationMs,
-            mode: workoutMode,
-            manualAdjustments: manualAdjustmentCount,
-            trackingMethod: sessionTrackingMethod,
-            nudgesUsed: nudgeCountAtCompletion,
-            eventId: sessionEventId,
-          });
-          if (mounted) setBadgeRewards(unlockedBadges);
-        } else if (mounted) {
-          setBadgeRewards([]);
-        }
-        const xp = await getXp();
-        if (mounted) setTotalXp(xp.totalEarned);
-        scheduleSharedJust20StatusUpdate();
-      } catch (error) {
         devLog('completion_rewards_failed', {
           message: error instanceof Error ? error.message : String(error),
         });
         // Completion proof card should stay usable even if rewards/social state fails.
-      }
-    })();
+      });
+
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [
+    durationMs,
+    isTestMode,
+    manualAdjustmentCount,
+    nudgeCountAtCompletion,
+    repCount,
+    sessionEventId,
+    sessionId,
+    sessionRecoveryType,
+    sessionTrackingMethod,
+    workoutMode,
+  ]);
 
   // Show milestone celebration 2.4s after load (just after buttons appear)
   useEffect(() => {

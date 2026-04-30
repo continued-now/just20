@@ -116,7 +116,7 @@ export default function RootLayout() {
     if (ready && redirectTo.current) {
       router.replace(redirectTo.current as any);
     }
-  }, [ready]);
+  }, [ready, router]);
 
   if (!ready) {
     if (initError) {

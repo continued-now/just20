@@ -26,7 +26,7 @@ import { getOrCreateUser } from '../lib/user';
 
 type Filter = 'all' | BadgeCategory;
 
-const FILTERS: Array<{ id: Filter; label: string }> = [
+const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'streak', label: 'Streak' },
   { id: 'social', label: 'Social' },

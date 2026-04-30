@@ -30,6 +30,8 @@ export default function HomeScreen() {
   const streak = useStreak();
   const nudges = useNudges();
   const { remainingMs, refreshWindow } = useCountdown();
+  const { refresh: refreshStreak } = streak;
+  const { refresh: refreshNudges } = nudges;
 
   const [chestReady, setChestReady] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
@@ -42,8 +44,8 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      streak.refresh();
-      nudges.refresh();
+      refreshStreak();
+      refreshNudges();
       refreshWindow();
 
       // Run all side-checks in parallel
@@ -79,7 +81,7 @@ export default function HomeScreen() {
       return () => {
         active = false;
       };
-    }, [streak.refresh, nudges.refresh, router])
+    }, [refreshStreak, refreshNudges, refreshWindow])
   );
 
   const mood = getMoodFromContext(nudges.remaining, streak.completedToday);

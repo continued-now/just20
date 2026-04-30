@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -144,7 +144,10 @@ export function BadgeUnlockCelebration({ rewards, onDone }: Props) {
 
   const reward = rewards[index];
   const badge = reward?.definition;
-  const presentation = badge ? getBadgeUnlockPresentation(badge, softAfterglow) : null;
+  const presentation = useMemo(
+    () => (badge ? getBadgeUnlockPresentation(badge, softAfterglow) : null),
+    [badge, softAfterglow]
+  );
   const settled = stage === 'settled';
 
   useEffect(() => {
@@ -179,14 +182,7 @@ export function BadgeUnlockCelebration({ rewards, onDone }: Props) {
     setOpen(true);
   }, [rewardKey]);
 
-  useEffect(() => {
-    if (!open || !reward || !presentation) return;
-    play();
-
-    return cleanupRun;
-  }, [open, index, reward, presentation?.tier, reduceMotion, softAfterglow]);
-
-  function cleanupRun() {
+  const cleanupRun = useCallback(() => {
     timers.current.forEach(timer => clearTimeout(timer));
     timers.current = [];
     runningAnimation.current?.stop();
@@ -196,14 +192,14 @@ export function BadgeUnlockCelebration({ rewards, onDone }: Props) {
       xpCount.removeListener(xpListener.current);
       xpListener.current = null;
     }
-  }
+  }, [xpCount]);
 
-  function schedule(callback: () => void, delay: number) {
+  const schedule = useCallback((callback: () => void, delay: number) => {
     const timer = setTimeout(callback, delay);
     timers.current.push(timer);
-  }
+  }, []);
 
-  function play() {
+  const play = useCallback(() => {
     if (!reward || !presentation) return;
 
     cleanupRun();
@@ -376,7 +372,32 @@ export function BadgeUnlockCelebration({ rewards, onDone }: Props) {
       setStage('settled');
       setDisplayedXp(reward.xpAwarded);
     });
-  }
+  }, [
+    afterglow,
+    anticipation,
+    badgeLift,
+    bursts,
+    buttonOpacity,
+    cleanupRun,
+    opacity,
+    presentation,
+    reduceMotion,
+    revealProgress,
+    reward,
+    ringOne,
+    ringTwo,
+    scale,
+    schedule,
+    xpCount,
+    xpOpacity,
+  ]);
+
+  useEffect(() => {
+    if (!open || !reward || !presentation) return;
+    play();
+
+    return cleanupRun;
+  }, [cleanupRun, open, play, presentation, reward]);
 
   function close() {
     if (!settled) return;

@@ -42,7 +42,7 @@ function MascotBounce({ emoji }: { emoji: string }) {
   const scale = useRef(new Animated.Value(0.4)).current;
   useEffect(() => {
     Animated.spring(scale, { toValue: 1, tension: 130, friction: 7, useNativeDriver: true }).start();
-  }, []);
+  }, [scale]);
   return <Animated.Text style={[styles.mascot, { transform: [{ scale }] }]}>{emoji}</Animated.Text>;
 }
 

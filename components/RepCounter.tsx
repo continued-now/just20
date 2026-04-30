@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const AnimatedText = Animated.Text as any;
 import { fontSize } from '../constants/theme';
+
+const AnimatedText = Animated.Text as any;
 
 type Props = {
   count: number;

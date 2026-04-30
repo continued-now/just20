@@ -8,7 +8,7 @@ import {
   type StreakTierInfo,
 } from '../lib/mascotState';
 import { colors } from '../constants/theme';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const AnimatedView = Animated.View as any;
 
 export { getMoodFromContext, getTierInfo, STREAK_TIERS, type MascotMood, type StreakTierInfo };

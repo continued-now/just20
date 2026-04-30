@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
 import { openWeeklyChest, getCoins } from '../lib/coins';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const AnimatedView = Animated.View as any;
 
 const COIN_COLORS = [colors.yellow, colors.streak, colors.brand, colors.yellow, '#FFEC8B'];
