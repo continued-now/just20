@@ -49,6 +49,7 @@ type StreakData = {
 type WeekDay = {
   key: string;
   label: string;
+  dateNumber: string;
   dateLabel: string;
   done: boolean;
   recoveryType: RecoveryType;
@@ -56,6 +57,7 @@ type WeekDay = {
 };
 
 const PERFECT_WEEK_TARGET = 7;
+const WEEKLY_CHEST_TARGET = 5;
 
 export default function StreakScreen() {
   const router = useRouter();
@@ -171,6 +173,8 @@ export default function StreakScreen() {
   const weekDoneCount = week.filter((day) => day.done).length;
   const monthDoneCount = Object.values(data?.calendar ?? {}).filter(Boolean).length;
   const perfectWeekProgress = Math.min((weekDoneCount / PERFECT_WEEK_TARGET) * 100, 100);
+  const weeklyChestProgress = Math.min((weekDoneCount / WEEKLY_CHEST_TARGET) * 100, 100);
+  const chestDaysRemaining = Math.max(0, WEEKLY_CHEST_TARGET - weekDoneCount);
   const milestoneProgress = nextMilestone
     ? Math.min((current / nextMilestone.days) * 100, 100)
     : 100;
@@ -178,6 +182,9 @@ export default function StreakScreen() {
   const streakLeague = getStreakLeague(current);
   const selected = selectedDay ?? week[week.length - 1];
   const flameVisual = getFlameStyle(data?.flameStyle);
+  const heroPalette = getHeroPalette(completedToday, streakIsAtRisk, freezeCanSaveToday);
+  const dailyGoalProgress = completedToday ? 100 : freezeCanSaveToday ? 45 : 0;
+  const freezeCount = data?.freezeCount ?? 0;
 
   async function handleShare() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -204,8 +211,14 @@ export default function StreakScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.headerTitleWrap}>
-            <Text style={styles.eyebrow}>STREAK CENTER</Text>
-            <Text style={styles.heading}>Keep the flame alive.</Text>
+            <Text style={styles.eyebrow}>STREAK</Text>
+            <Text style={styles.heading}>
+              {completedToday
+                ? 'Locked in today.'
+                : current > 0
+                  ? `Day ${dayOnLine} is live.`
+                  : 'Start your streak.'}
+            </Text>
           </View>
           <View style={styles.currencyStack}>
             <View style={styles.xpPill}>
@@ -231,29 +244,68 @@ export default function StreakScreen() {
         <View
           style={[
             styles.hero,
-            { backgroundColor: flameVisual.heroBg, borderColor: flameVisual.borderColor },
-            streakIsAtRisk && styles.heroDanger,
-            completedToday && styles.heroSafe,
+            {
+              backgroundColor: heroPalette.background,
+              borderColor: heroPalette.border,
+              shadowColor: heroPalette.shadow,
+            },
           ]}
         >
-          <Animated.View
-            style={[
-              styles.flameAura,
-              {
-                backgroundColor: flameVisual.auraColor,
-                opacity: flameGlow.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.55] }),
-                transform: [{ scale: flameScale }],
-              },
-            ]}
-          />
-          <Animated.Text style={[styles.flame, { transform: [{ scale: flameScale }] }]}>
-            {flameVisual.emoji}
-          </Animated.Text>
-          <Text style={styles.streakNum}>{current}</Text>
-          <Text style={styles.streakLabel}>{current === 1 ? 'day streak' : 'day streak'}</Text>
-          <Text style={styles.heroSub}>
-            {getHeroCopy(current, completedToday, freezeCanSaveToday, hoursLeft)}
-          </Text>
+          <View style={styles.heroTopRow}>
+            <View style={[styles.heroStatusPill, { backgroundColor: heroPalette.pill }]}>
+              <Text style={[styles.heroStatusText, { color: heroPalette.pillText }]}>
+                {completedToday ? 'TODAY LOCKED' : streakIsAtRisk ? 'ACTION NEEDED' : 'DAILY GOAL'}
+              </Text>
+            </View>
+            <View style={styles.heroFreezePill}>
+              <Text style={styles.heroFreezeText}>🧊 {freezeCount}</Text>
+            </View>
+          </View>
+
+          <View style={styles.heroMain}>
+            <View style={styles.flameOrb}>
+              <Animated.View
+                style={[
+                  styles.flameAura,
+                  {
+                    backgroundColor: flameVisual.auraColor,
+                    opacity: flameGlow.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.18, 0.55],
+                    }),
+                    transform: [{ scale: flameScale }],
+                  },
+                ]}
+              />
+              <Animated.Text style={[styles.flame, { transform: [{ scale: flameScale }] }]}>
+                {flameVisual.emoji}
+              </Animated.Text>
+            </View>
+            <View style={styles.heroCopy}>
+              <Text style={styles.streakNum}>{current}</Text>
+              <Text style={styles.streakLabel}>{current === 1 ? 'day streak' : 'day streak'}</Text>
+              <Text style={styles.heroSub}>
+                {getHeroCopy(current, completedToday, freezeCanSaveToday, hoursLeft)}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.dailyGoalCard}>
+            <View style={styles.dailyGoalTop}>
+              <Text style={styles.dailyGoalTitle}>
+                {completedToday ? 'Daily goal complete' : `Finish 20 to lock Day ${dayOnLine}`}
+              </Text>
+              <Text style={styles.dailyGoalValue}>{completedToday ? '100%' : '0/20'}</Text>
+            </View>
+            <View style={styles.dailyGoalTrack}>
+              <View
+                style={[
+                  styles.dailyGoalFill,
+                  { width: `${dailyGoalProgress}%`, backgroundColor: heroPalette.progress },
+                ]}
+              />
+            </View>
+          </View>
 
           <View style={styles.heroActions}>
             <TouchableOpacity
@@ -262,7 +314,7 @@ export default function StreakScreen() {
               activeOpacity={0.86}
             >
               <Text style={styles.primaryCtaText}>
-                {completedToday ? 'FLEX THE STREAK →' : `SAVE DAY ${dayOnLine} →`}
+                {completedToday ? 'SHARE STREAK →' : `LOCK DAY ${dayOnLine} →`}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.shareChip} onPress={handleShare} activeOpacity={0.82}>
@@ -273,19 +325,22 @@ export default function StreakScreen() {
 
         <View style={styles.statusGrid}>
           <MiniStatus
+            icon={completedToday ? '✓' : '!'}
             tone={completedToday ? 'safe' : streakIsAtRisk ? 'danger' : 'neutral'}
-            label={completedToday ? 'Locked' : 'At risk'}
-            value={completedToday ? 'Safe today' : current > 0 ? `${hoursLeft}h left` : 'Start now'}
+            label="Today"
+            value={completedToday ? 'Locked' : current > 0 ? `${hoursLeft}h left` : 'Start now'}
           />
           <MiniStatus
-            tone={(data?.freezeCount ?? 0) > 0 ? 'ice' : 'danger'}
-            label="Freeze bank"
-            value={`${data?.freezeCount ?? 0}/3`}
+            icon="🧊"
+            tone={freezeCount > 0 ? 'ice' : 'danger'}
+            label="Freezes"
+            value={`${freezeCount}/3`}
           />
           <MiniStatus
+            icon="🎁"
             tone={data?.chestReady ? 'reward' : 'neutral'}
-            label="Weekly chest"
-            value={data?.chestReady ? 'Ready' : `${weekDoneCount}/5`}
+            label="Chest"
+            value={data?.chestReady ? 'Ready' : `${weekDoneCount}/${WEEKLY_CHEST_TARGET}`}
           />
         </View>
 
@@ -299,18 +354,18 @@ export default function StreakScreen() {
             <View style={styles.chestTextWrap}>
               <Text style={styles.chestTitle}>Reward waiting</Text>
               <Text style={styles.chestText}>
-                You earned a weekly chest. Open it before the dopamine goblin gets impatient.
+                You earned a weekly chest. Open it while the streak momentum is fresh.
               </Text>
             </View>
             <Text style={styles.chevron}>→</Text>
           </TouchableOpacity>
         )}
 
-        <View style={styles.card}>
+        <View style={[styles.card, styles.weekCard]}>
           <View style={styles.cardHeader}>
             <View>
-              <Text style={styles.cardTitle}>Perfect Week</Text>
-              <Text style={styles.cardSub}>Fill all 7 rings for a cleaner streak story.</Text>
+              <Text style={styles.cardTitle}>This Week</Text>
+              <Text style={styles.cardSub}>Light the row. Five locked days opens the chest.</Text>
             </View>
             <Text style={styles.cardScore}>{weekDoneCount}/7</Text>
           </View>
@@ -333,11 +388,14 @@ export default function StreakScreen() {
                       (day.done || day.recoveryType !== 'none') && styles.dayRingTextDone,
                     ]}
                   >
-                    {day.recoveryType !== 'none' ? 'P' : day.done ? '✓' : day.isToday ? '!' : '•'}
+                    {getDayRingGlyph(day)}
                   </Text>
                 </View>
                 <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>
                   {day.label}
+                </Text>
+                <Text style={[styles.dayNumber, day.isToday && styles.dayLabelToday]}>
+                  {day.dateNumber}
                 </Text>
               </Pressable>
             ))}
@@ -347,16 +405,30 @@ export default function StreakScreen() {
             <View style={[styles.progressFill, { width: `${perfectWeekProgress}%` }]} />
           </View>
 
+          <View style={styles.chestProgressCard}>
+            <View style={styles.chestProgressCopy}>
+              <Text style={styles.chestProgressTitle}>Weekly chest</Text>
+              <Text style={styles.chestProgressText}>
+                {data?.chestReady
+                  ? 'Ready to open.'
+                  : `${chestDaysRemaining} more locked day${chestDaysRemaining === 1 ? '' : 's'} to unlock.`}
+              </Text>
+            </View>
+            <View style={styles.chestProgressTrack}>
+              <View style={[styles.chestProgressFill, { width: `${weeklyChestProgress}%` }]} />
+            </View>
+          </View>
+
           <View style={styles.dayDetail}>
             <Text style={styles.dayDetailTitle}>{selected.dateLabel}</Text>
             <Text style={styles.dayDetailText}>
               {selected.done
-                ? 'Stamped. This day is part of the streak story.'
+                ? 'Locked. This day is keeping the streak alive.'
                 : selected.recoveryType !== 'none'
-                  ? 'Patched day. Active streak saved, but clean-streak badges still know the truth.'
+                  ? 'Protected with a freeze. The active streak survived.'
                   : selected.isToday
-                    ? 'Today is open. Finish 20 and make the ring glow.'
-                    : 'Missed days are visible by design. The calendar should make quitting annoying.'}
+                    ? 'Today is open. Finish 20 and light the ring.'
+                    : 'Missed. The calendar keeps the receipt so the next lock-in matters.'}
             </Text>
           </View>
         </View>
@@ -364,11 +436,11 @@ export default function StreakScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View>
-              <Text style={styles.cardTitle}>Next Big Moment</Text>
+              <Text style={styles.cardTitle}>Next Reward</Text>
               <Text style={styles.cardSub}>
                 {nextMilestone
-                  ? `${nextMilestone.daysLeft} day${nextMilestone.daysLeft === 1 ? '' : 's'} until the next share-worthy badge.`
-                  : 'Every milestone is unlocked. Ridiculous.'}
+                  ? `${nextMilestone.daysLeft} day${nextMilestone.daysLeft === 1 ? '' : 's'} until the next streak milestone.`
+                  : 'Every milestone is unlocked.'}
               </Text>
             </View>
             <Text style={styles.cardScore}>{nextMilestone ? nextMilestone.days : 'MAX'}</Text>
@@ -387,9 +459,12 @@ export default function StreakScreen() {
             ))}
           </View>
           <View style={styles.rewardRow}>
-            <RewardPill label="Default window" value="+18 XP" />
-            <RewardPill label="No excuses" value="+25 XP" />
-            <RewardPill label="Nudges" value="-XP" />
+            <RewardPill label="Weekly chest" value={`${weekDoneCount}/${WEEKLY_CHEST_TARGET}`} />
+            <RewardPill
+              label="Next badge"
+              value={nextMilestone ? `${nextMilestone.daysLeft}d` : 'MAX'}
+            />
+            <RewardPill label="Freezes" value={`${freezeCount}/3`} />
           </View>
         </View>
 
@@ -500,6 +575,7 @@ function buildWeek(
     return {
       key,
       label: d.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 3),
+      dateNumber: String(d.getDate()),
       dateLabel: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       done: calendar[key] ?? false,
       recoveryType: recoveryCalendar[key] ?? 'none',
@@ -536,10 +612,69 @@ function getHeroCopy(
   freezeCanSaveToday: boolean,
   hoursLeft: number
 ): string {
-  if (completedToday) return 'Today is locked. The streak survives another sunrise.';
-  if (current === 0) return 'Start with one clean win. The first flame is the hardest.';
-  if (freezeCanSaveToday) return 'A freeze can cover yesterday, but today still needs your 20.';
-  return `${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} until midnight tries to steal it.`;
+  if (completedToday) return 'Perfect. Today is locked and the streak stays bright.';
+  if (current === 0) return 'One quick set starts the counter.';
+  if (freezeCanSaveToday) return 'A freeze can protect yesterday, but today still needs 20.';
+  return `${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} left to keep the flame lit.`;
+}
+
+function getHeroPalette(
+  completedToday: boolean,
+  streakIsAtRisk: boolean,
+  freezeCanSaveToday: boolean
+): {
+  background: string;
+  border: string;
+  pill: string;
+  pillText: string;
+  progress: string;
+  shadow: string;
+} {
+  if (completedToday) {
+    return {
+      background: colors.brand,
+      border: colors.brandDark,
+      pill: '#D9FFC0',
+      pillText: colors.brandDark,
+      progress: colors.yellow,
+      shadow: colors.brandDark,
+    };
+  }
+  if (freezeCanSaveToday) {
+    return {
+      background: colors.ice,
+      border: '#0B7CAE',
+      pill: '#DDF5FF',
+      pillText: '#075A7B',
+      progress: colors.yellow,
+      shadow: colors.ice,
+    };
+  }
+  if (streakIsAtRisk) {
+    return {
+      background: colors.streak,
+      border: colors.streakDark,
+      pill: '#FFF2D5',
+      pillText: colors.streakDark,
+      progress: colors.brand,
+      shadow: colors.streak,
+    };
+  }
+  return {
+    background: '#7DDC25',
+    border: colors.brandDark,
+    pill: '#E9FFD8',
+    pillText: colors.brandDark,
+    progress: colors.yellow,
+    shadow: colors.brand,
+  };
+}
+
+function getDayRingGlyph(day: WeekDay): string {
+  if (day.recoveryType !== 'none') return '🧊';
+  if (day.done) return '✓';
+  if (day.isToday) return '20';
+  return '•';
 }
 
 function getStreakLeague(streak: number): { emoji: string; name: string; copy: string } {
@@ -577,18 +712,23 @@ function getStreakLeague(streak: number): { emoji: string; name: string; copy: s
 }
 
 function MiniStatus({
+  icon,
   tone,
   label,
   value,
 }: {
+  icon: string;
   tone: 'safe' | 'danger' | 'ice' | 'reward' | 'neutral';
   label: string;
   value: string;
 }) {
   return (
     <View style={[styles.miniStatus, styles[`miniStatus_${tone}`]]}>
-      <Text style={styles.miniLabel}>{label}</Text>
-      <Text style={styles.miniValue}>{value}</Text>
+      <Text style={styles.miniIcon}>{icon}</Text>
+      <View style={styles.miniTextWrap}>
+        <Text style={styles.miniLabel}>{label}</Text>
+        <Text style={styles.miniValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -669,85 +809,160 @@ const styles = StyleSheet.create({
 
   hero: {
     overflow: 'hidden',
-    alignItems: 'center',
-    backgroundColor: '#1D120E',
+    alignItems: 'stretch',
     borderRadius: 34,
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#4B2419',
-    gap: spacing.xs,
-  },
-  heroDanger: {
-    borderColor: '#FF8A65',
-    shadowColor: colors.streak,
-    shadowOpacity: 0.28,
+    borderWidth: 2,
+    gap: spacing.sm,
+    shadowOpacity: 0.24,
     shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6,
   },
-  heroSafe: {
-    backgroundColor: '#10251A',
-    borderColor: colors.brand,
+  heroTopRow: {
+    zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  heroStatusPill: {
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  heroStatusText: {
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  heroFreezePill: {
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  heroFreezeText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  heroMain: {
+    zIndex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 116,
+  },
+  flameOrb: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.34)',
   },
   flameAura: {
     position: 'absolute',
-    top: 20,
-    width: 210,
-    height: 210,
-    borderRadius: 105,
+    width: 94,
+    height: 94,
+    borderRadius: 47,
     backgroundColor: colors.streak,
   },
-  flame: { fontSize: 78, marginTop: spacing.xs },
+  flame: { fontSize: 54 },
+  heroCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   streakNum: {
-    fontSize: 92,
+    fontSize: 70,
     fontWeight: '900',
     color: '#FFFFFF',
-    lineHeight: 100,
-    letterSpacing: -4,
+    lineHeight: 74,
+    letterSpacing: -3,
   },
   streakLabel: {
     fontSize: fontSize.lg,
     fontWeight: '900',
-    color: '#FFD0B8',
+    color: 'rgba(255,255,255,0.92)',
     textTransform: 'uppercase',
     letterSpacing: 1.1,
   },
   heroSub: {
-    maxWidth: 290,
-    color: '#FFE9DD',
+    color: 'rgba(255,255,255,0.82)',
     fontSize: fontSize.sm,
-    fontWeight: '700',
-    textAlign: 'center',
+    fontWeight: '800',
     lineHeight: 20,
     marginTop: spacing.xs,
   },
+  dailyGoalCard: {
+    zIndex: 1,
+    borderRadius: radius.lg,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.34)',
+    gap: spacing.sm,
+  },
+  dailyGoalTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  dailyGoalTitle: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  dailyGoalValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  dailyGoalTrack: {
+    height: 12,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    overflow: 'hidden',
+  },
+  dailyGoalFill: {
+    height: '100%',
+    borderRadius: radius.full,
+  },
   heroActions: {
+    zIndex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.md,
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
   primaryCta: {
-    backgroundColor: colors.streak,
+    backgroundColor: '#FFFFFF',
     borderRadius: radius.full,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    shadowColor: colors.streak,
-    shadowOpacity: 0.32,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
   },
-  primaryCtaDone: { backgroundColor: colors.success },
+  primaryCtaDone: { backgroundColor: '#FFFFFF' },
   primaryCtaText: {
-    color: '#FFFFFF',
+    color: colors.text,
     fontSize: fontSize.sm,
     fontWeight: '900',
     letterSpacing: 0.7,
   },
   shareChip: {
-    backgroundColor: 'rgba(255,255,255,0.13)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
@@ -760,23 +975,36 @@ const styles = StyleSheet.create({
   miniStatus: {
     flex: 1,
     borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    gap: 4,
+    padding: spacing.sm,
+    borderWidth: 2,
+    gap: spacing.sm,
+    alignItems: 'center',
+    minHeight: 94,
+    justifyContent: 'center',
   },
-  miniStatus_safe: { backgroundColor: '#E9F8F0', borderColor: '#C4EED7' },
-  miniStatus_danger: { backgroundColor: '#FFF1EA', borderColor: '#FFD0BE' },
-  miniStatus_ice: { backgroundColor: '#EAF8FF', borderColor: '#BCEBFF' },
-  miniStatus_reward: { backgroundColor: '#FFF6D8', borderColor: '#FFE18A' },
+  miniStatus_safe: { backgroundColor: '#E9F8F0', borderColor: colors.brand },
+  miniStatus_danger: { backgroundColor: '#FFF1EA', borderColor: colors.streak },
+  miniStatus_ice: { backgroundColor: '#EAF8FF', borderColor: colors.ice },
+  miniStatus_reward: { backgroundColor: '#FFF6D8', borderColor: colors.yellow },
   miniStatus_neutral: { backgroundColor: colors.card, borderColor: colors.border },
+  miniIcon: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: colors.text,
+  },
+  miniTextWrap: {
+    alignItems: 'center',
+    gap: 2,
+  },
   miniLabel: {
     fontSize: 10,
     fontWeight: '900',
     color: colors.subtext,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
+    textAlign: 'center',
   },
-  miniValue: { fontSize: fontSize.sm, fontWeight: '900', color: colors.text },
+  miniValue: { fontSize: fontSize.sm, fontWeight: '900', color: colors.text, textAlign: 'center' },
 
   chestCard: {
     flexDirection: 'row',
@@ -825,12 +1053,16 @@ const styles = StyleSheet.create({
   },
   cardScore: { fontSize: 26, fontWeight: '900', color: colors.streak, letterSpacing: -1 },
 
+  weekCard: {
+    backgroundColor: '#F7FFE9',
+    borderColor: '#CDEFA6',
+  },
   weekRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.xs },
   dayCol: { alignItems: 'center', gap: spacing.xs, flex: 1 },
   dayRing: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bg,
@@ -847,6 +1079,7 @@ const styles = StyleSheet.create({
   dayRingText: { fontSize: fontSize.md, fontWeight: '900', color: colors.subtext },
   dayRingTextDone: { color: '#FFFFFF' },
   dayLabel: { fontSize: 10, color: colors.subtext, fontWeight: '800' },
+  dayNumber: { fontSize: 10, color: colors.subtext, fontWeight: '900', marginTop: -3 },
   dayLabelToday: { color: colors.streak },
   progressTrack: {
     height: 12,
@@ -859,10 +1092,47 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.streak,
   },
+  chestProgressCard: {
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D9EFC2',
+    gap: spacing.sm,
+  },
+  chestProgressCopy: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  chestProgressTitle: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  chestProgressText: {
+    flex: 1,
+    color: colors.subtext,
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  chestProgressTrack: {
+    height: 10,
+    borderRadius: radius.full,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+  },
+  chestProgressFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.brand,
+  },
   dayDetail: {
     borderRadius: radius.md,
     padding: spacing.md,
-    backgroundColor: colors.bg,
+    backgroundColor: '#FFFFFF',
     gap: 3,
   },
   dayDetailTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.text },
