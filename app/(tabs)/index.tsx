@@ -1,20 +1,29 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandLogo } from '../../components/BrandLogo';
 import { Mascot, getMoodFromContext, getTierInfo } from '../../components/Mascot';
-import { StreakBadge } from '../../components/StreakBadge';
 import { XpProgressCard } from '../../components/XpProgressCard';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
 import { useCountdown } from '../../hooks/useCountdown';
 import { useNudges } from '../../hooks/useNudges';
 import { useStreak } from '../../hooks/useStreak';
-import { getCoins, getRecoveryOffer, type RecoveryOffer, type RecoveryType } from '../../lib/db';
+import {
+  getCoins,
+  getCompletedDaysThisWeek,
+  getCompletedRepsToday,
+  getRecoveryOffer,
+  type RecoveryOffer,
+  type RecoveryType,
+} from '../../lib/db';
 import { isChestAvailable } from '../../lib/coins';
 import { getBuddyStatuses } from '../../lib/social';
 import { type BuddyStatus } from '../../lib/social';
 import { getXp } from '../../lib/xp';
+
+const DAILY_TARGET_REPS = 20;
+const WEEKLY_CHEST_TARGET = 5;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -25,6 +34,8 @@ export default function HomeScreen() {
   const [chestReady, setChestReady] = useState(false);
   const [coinBalance, setCoinBalance] = useState(0);
   const [totalXp, setTotalXp] = useState(0);
+  const [completedDaysThisWeek, setCompletedDaysThisWeek] = useState(0);
+  const [completedRepsToday, setCompletedRepsToday] = useState(0);
   const [buddies, setBuddies] = useState<BuddyStatus[]>([]);
   const [recoveryOffer, setRecoveryOffer] = useState<RecoveryOffer | null>(null);
 
@@ -42,20 +53,28 @@ export default function HomeScreen() {
         getBuddyStatuses(),
         getXp(),
         getRecoveryOffer(),
-      ]).then(([chest, coins, buds, xp, recovery]) => {
-        if (!active) return;
-        setChestReady(chest);
-        setCoinBalance(coins.balance);
-        setBuddies(buds);
-        setTotalXp(xp.totalEarned);
-        setRecoveryOffer(recovery);
-      }).catch(() => {
-        if (!active) return;
-        setChestReady(false);
-        setCoinBalance(0);
-        setTotalXp(0);
-        setRecoveryOffer(null);
-      });
+        getCompletedDaysThisWeek(),
+        getCompletedRepsToday(),
+      ])
+        .then(([chest, coins, buds, xp, recovery, daysThisWeek, repsToday]) => {
+          if (!active) return;
+          setChestReady(chest);
+          setCoinBalance(coins.balance);
+          setBuddies(buds);
+          setTotalXp(xp.totalEarned);
+          setRecoveryOffer(recovery);
+          setCompletedDaysThisWeek(daysThisWeek);
+          setCompletedRepsToday(repsToday);
+        })
+        .catch(() => {
+          if (!active) return;
+          setChestReady(false);
+          setCoinBalance(0);
+          setTotalXp(0);
+          setRecoveryOffer(null);
+          setCompletedDaysThisWeek(0);
+          setCompletedRepsToday(0);
+        });
 
       return () => {
         active = false;
@@ -80,11 +99,31 @@ export default function HomeScreen() {
   }
 
   const showCountdown = remainingMs > 0 && !streak.completedToday;
+  const dailyReps = streak.completedToday
+    ? Math.max(DAILY_TARGET_REPS, completedRepsToday)
+    : completedRepsToday;
+  const dailyProgress = streak.completedToday
+    ? 100
+    : Math.min(100, (dailyReps / DAILY_TARGET_REPS) * 100);
+  const chestDays = Math.min(completedDaysThisWeek, WEEKLY_CHEST_TARGET);
+  const chestProgress = Math.min(100, (chestDays / WEEKLY_CHEST_TARGET) * 100);
+  const questTitle = streak.completedToday
+    ? 'Daily quest complete'
+    : showCountdown
+      ? 'Your window is open'
+      : "Today's 20";
+  const questCta = streak.completedToday
+    ? chestReady
+      ? 'Open chest →'
+      : 'View streak →'
+    : showCountdown
+      ? 'Do it now →'
+      : "Start today's 20 →";
 
   function statusText() {
-    if (streak.completedToday) return "You did it! Rest up. 🎉";
+    if (streak.completedToday) return 'You did it! Rest up. 🎉';
     if (nudges.loading) return "Checking today's reminder plan...";
-    if (showCountdown) return "Your 10-minute window is open 🔥";
+    if (showCountdown) return 'Your 10-minute window is open 🔥';
     if (nudges.mode === 'strict') {
       return nudges.scheduledWindowActive
         ? `No-excuses window at ${formatHour(nudges.scheduledHour)}`
@@ -99,7 +138,7 @@ export default function HomeScreen() {
         : 'Daily reminders are off';
     }
     if (nudges.remaining <= 0) return "Day's almost over. Tomorrow. 😑";
-    if (nudges.remaining === 1) return "Last chance today 🔥";
+    if (nudges.remaining === 1) return 'Last chance today 🔥';
     return `${nudges.remaining} nudge${nudges.remaining !== 1 ? 's' : ''} left today`;
   }
 
@@ -115,19 +154,19 @@ export default function HomeScreen() {
   }
 
   // Buddy summary for the social proof strip
-  const buddyDoneCount = buddies.filter(b => b.completedToday).length;
+  const buddyDoneCount = buddies.filter((b) => b.completedToday).length;
   const buddySocialText =
     buddies.length === 0
       ? null
       : buddyDoneCount === 0
-      ? `${buddies.length} buddy${buddies.length > 1 ? 's' : ''} still going today`
-      : buddyDoneCount === buddies.length
-      ? `All ${buddies.length} buddy${buddies.length > 1 ? 's' : ''} done today 🔥`
-      : `${buddyDoneCount}/${buddies.length} budd${buddies.length > 1 ? 'ies' : 'y'} done today`;
+        ? `${buddies.length} buddy${buddies.length > 1 ? 's' : ''} still going today`
+        : buddyDoneCount === buddies.length
+          ? `All ${buddies.length} buddy${buddies.length > 1 ? 's' : ''} done today 🔥`
+          : `${buddyDoneCount}/${buddies.length} budd${buddies.length > 1 ? 'ies' : 'y'} done today`;
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <BrandLogo size="sm" />
           <TouchableOpacity
@@ -135,144 +174,186 @@ export default function HomeScreen() {
             onPress={() => router.push('/xp-shop' as any)}
             activeOpacity={0.78}
           >
-              <Text style={styles.coinText}>🪙 {coinBalance}</Text>
+            <Text style={styles.coinText}>🪙 {coinBalance}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.center}>
-          {streak.current > 0 && (
-            <StreakBadge streak={streak.current} freezes={streak.freezeCount} />
-          )}
-
-          <View style={styles.mascotWrap}>
-            <Mascot mood={mood} streak={streak.current} size={150} />
+        <View style={[styles.questCard, streak.completedToday && styles.questCardDone]}>
+          <View style={styles.questTopRow}>
+            <View style={styles.questTitleWrap}>
+              <Text style={styles.questEyebrow}>Daily Quest</Text>
+              <Text style={styles.questTitle}>{questTitle}</Text>
+            </View>
+            <View style={styles.streakMini}>
+              <Text style={styles.streakMiniValue}>{streak.current}</Text>
+              <Text style={styles.streakMiniLabel}>streak</Text>
+            </View>
           </View>
 
-          {streak.current > 0 && (
-            <Text style={styles.tierTeaser}>
-              {tierInfo.form} {tierInfo.label}
-              {tierInfo.daysToNext !== null ? `  ·  ${tierInfo.daysToNext}d to next` : ''}
+          <View style={styles.questMain}>
+            <View style={styles.mascotWrap}>
+              <Mascot mood={mood} streak={streak.current} size={116} />
+            </View>
+            <View style={styles.questCopy}>
+              <Text style={styles.questStatus}>{statusText()}</Text>
+              <Text style={styles.tierTeaser}>
+                {tierInfo.form} {tierInfo.label}
+                {tierInfo.daysToNext !== null ? ` · ${tierInfo.daysToNext}d to next` : ''}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.questProgressCard}>
+            <View style={styles.questProgressTop}>
+              <Text style={styles.questProgressLabel}>
+                {streak.completedToday ? 'Locked today' : 'Pushups today'}
+              </Text>
+              <Text style={styles.questProgressValue}>
+                {streak.completedToday ? '100%' : `${dailyReps}/${DAILY_TARGET_REPS}`}
+              </Text>
+            </View>
+            <View style={styles.questTrack}>
+              <View style={[styles.questFill, { width: `${dailyProgress}%` }]} />
+            </View>
+          </View>
+
+          <View style={styles.rewardStrip}>
+            <RewardChip
+              label="Chest"
+              value={`${chestDays}/${WEEKLY_CHEST_TARGET}`}
+              progress={chestProgress}
+            />
+            <RewardChip label="Freezes" value={`${streak.freezeCount}/3`} />
+            <RewardChip label="XP" value={`${totalXp}`} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.questCta}
+            onPress={() => {
+              if (streak.completedToday) {
+                router.push(chestReady ? '/chest-open' : '/(tabs)/streak');
+              } else {
+                router.push('/workout');
+              }
+            }}
+            activeOpacity={0.86}
+          >
+            <Text style={styles.questCtaText}>{questCta}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {recoveryOffer?.available && !streak.completedToday && (
+          <View style={styles.recoveryCard}>
+            <Text style={styles.recoveryEyebrow}>
+              {recoveryOffer.reason === 'debt_due' ? 'DEBT SET DUE' : 'STREAK PATCH AVAILABLE'}
             </Text>
-          )}
-
-          <Text style={styles.status}>{statusText()}</Text>
-
-          {recoveryOffer?.available && !streak.completedToday && (
-            <View style={styles.recoveryCard}>
-              <Text style={styles.recoveryEyebrow}>
-                {recoveryOffer.reason === 'debt_due' ? 'DEBT SET DUE' : 'STREAK PATCH AVAILABLE'}
-              </Text>
-              <Text style={styles.recoveryTitle}>
-                {recoveryOffer.reason === 'debt_due'
-                  ? 'Clear the last 10.'
-                  : 'Yesterday is patchable.'}
-              </Text>
-              <Text style={styles.recoveryCopy}>
-                {recoveryOffer.reason === 'debt_due'
-                  ? 'Do 30 today to clear the debt and keep the active streak alive.'
-                  : recoveryOffer.patchWindowOpen
+            <Text style={styles.recoveryTitle}>
+              {recoveryOffer.reason === 'debt_due'
+                ? 'Clear the last 10.'
+                : 'Yesterday is patchable.'}
+            </Text>
+            <Text style={styles.recoveryCopy}>
+              {recoveryOffer.reason === 'debt_due'
+                ? 'Do 30 today to clear the debt and keep the active streak alive.'
+                : recoveryOffer.patchWindowOpen
                   ? 'Patch window is open. Do 40 now for max recovery XP.'
                   : `Do 40 today, or split it into 10 extra over two days. Patch window: ${formatRecoveryTime(recoveryOffer.patchWindowStart)}.`}
-              </Text>
-              <View style={styles.recoveryActions}>
-                {recoveryOffer.reason === 'debt_due' ? (
-                  <TouchableOpacity
-                    style={styles.recoveryPrimary}
-                    onPress={() => startRecovery('debt_set')}
-                    activeOpacity={0.84}
-                  >
-                    <Text style={styles.recoveryPrimaryText}>Do 30 now →</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <>
-                    {recoveryOffer.canPatch && (
-                      <TouchableOpacity
-                        style={styles.recoveryPrimary}
-                        onPress={() => startRecovery('streak_patch')}
-                        activeOpacity={0.84}
-                      >
-                        <Text style={styles.recoveryPrimaryText}>Patch with 40 →</Text>
-                      </TouchableOpacity>
-                    )}
-                    {recoveryOffer.canDebtSet && (
-                      <TouchableOpacity
-                        style={styles.recoverySecondary}
-                        onPress={() => startRecovery('debt_set')}
-                        activeOpacity={0.78}
-                      >
-                        <Text style={styles.recoverySecondaryText}>Debt Set: 30 today</Text>
-                      </TouchableOpacity>
-                    )}
-                  </>
-                )}
-              </View>
+            </Text>
+            <View style={styles.recoveryActions}>
+              {recoveryOffer.reason === 'debt_due' ? (
+                <TouchableOpacity
+                  style={styles.recoveryPrimary}
+                  onPress={() => startRecovery('debt_set')}
+                  activeOpacity={0.84}
+                >
+                  <Text style={styles.recoveryPrimaryText}>Do 30 now →</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  {recoveryOffer.canPatch && (
+                    <TouchableOpacity
+                      style={styles.recoveryPrimary}
+                      onPress={() => startRecovery('streak_patch')}
+                      activeOpacity={0.84}
+                    >
+                      <Text style={styles.recoveryPrimaryText}>Patch with 40 →</Text>
+                    </TouchableOpacity>
+                  )}
+                  {recoveryOffer.canDebtSet && (
+                    <TouchableOpacity
+                      style={styles.recoverySecondary}
+                      onPress={() => startRecovery('debt_set')}
+                      activeOpacity={0.78}
+                    >
+                      <Text style={styles.recoverySecondaryText}>Debt Set: 30 today</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
             </View>
-          )}
+          </View>
+        )}
 
-          <XpProgressCard
-            totalXp={totalXp}
-            compact
-            onPress={() => router.push('/xp-shop' as any)}
-          />
+        <XpProgressCard totalXp={totalXp} compact onPress={() => router.push('/xp-shop' as any)} />
 
-          {showCountdown && (
-            <TouchableOpacity
-              style={styles.countdownBanner}
-              onPress={() => router.push('/workout')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.countdownLabel}>DO IT NOW</Text>
-              <Text style={styles.countdownTimer}>{formatCountdown(remainingMs)}</Text>
-              <Text style={styles.countdownSub}>left in your window</Text>
-            </TouchableOpacity>
-          )}
+        {showCountdown && (
+          <TouchableOpacity
+            style={styles.countdownBanner}
+            onPress={() => router.push('/workout')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.countdownLabel}>WINDOW OPEN</Text>
+            <Text style={styles.countdownTimer}>{formatCountdown(remainingMs)}</Text>
+            <Text style={styles.countdownSub}>{"left to claim today's lock"}</Text>
+          </TouchableOpacity>
+        )}
 
-          {/* Social proof strip */}
-          {buddySocialText && (
+        <View style={styles.socialCard}>
+          <Text style={styles.socialTitle}>Squad pressure</Text>
+          {buddySocialText ? (
             <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.7}>
               <Text style={styles.socialStrip}>{buddySocialText}</Text>
             </TouchableOpacity>
-          )}
-          {buddies.length === 0 && (
+          ) : (
             <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.7}>
-              <Text style={styles.invitePrompt}>👥 Start a 7-day friend streak →</Text>
+              <Text style={styles.invitePrompt}>Start a 7-day friend streak →</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Weekly chest CTA (only on Sundays when eligible) */}
         {chestReady && (
           <TouchableOpacity
             style={styles.chestCta}
             onPress={() => router.push('/chest-open')}
             activeOpacity={0.85}
           >
-            <Text style={styles.chestCtaText}>📦 Weekly chest available — open it →</Text>
+            <Text style={styles.chestCtaText}>Weekly chest available — open it →</Text>
           </TouchableOpacity>
         )}
-
-        {!streak.completedToday && (
-          <View style={styles.bottom}>
-            <TouchableOpacity
-              style={styles.cta}
-              onPress={() => router.push('/workout')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.ctaText}>DO IT NOW →</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {streak.completedToday && (
-          <View style={styles.bottom}>
-            <View style={styles.doneCard}>
-              <Text style={styles.doneEmoji}>✅</Text>
-              <Text style={styles.doneText}>Pushups done today</Text>
-            </View>
-          </View>
-        )}
-      </View>
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function RewardChip({
+  label,
+  value,
+  progress,
+}: {
+  label: string;
+  value: string;
+  progress?: number;
+}) {
+  return (
+    <View style={styles.rewardChip}>
+      <Text style={styles.rewardChipValue}>{value}</Text>
+      <Text style={styles.rewardChipLabel}>{label}</Text>
+      {progress !== undefined ? (
+        <View style={styles.rewardChipTrack}>
+          <View style={[styles.rewardChipFill, { width: `${progress}%` }]} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -288,9 +369,14 @@ function formatRecoveryTime(value: number | null): string {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl + spacing.xl,
+    gap: spacing.md,
+  },
   container: { flex: 1, paddingHorizontal: spacing.lg },
   header: {
-    paddingTop: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -311,6 +397,70 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#B8860B',
   },
+  questCard: {
+    borderRadius: 32,
+    backgroundColor: colors.brand,
+    borderWidth: 2,
+    borderColor: colors.brandDark,
+    padding: spacing.lg,
+    gap: spacing.md,
+    shadowColor: colors.brandDark,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 5,
+  },
+  questCardDone: {
+    backgroundColor: '#74DE22',
+  },
+  questTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  questTitleWrap: { flex: 1, minWidth: 0 },
+  questEyebrow: {
+    color: '#E9FFD8',
+    fontSize: fontSize.xs,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+  },
+  questTitle: {
+    color: '#FFFFFF',
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: '900',
+    letterSpacing: -1,
+    marginTop: 2,
+  },
+  streakMini: {
+    minWidth: 76,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.34)',
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  streakMiniValue: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 30,
+  },
+  streakMiniLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  questMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -318,13 +468,27 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   mascotWrap: {
-    marginVertical: spacing.md,
+    width: 126,
+    height: 126,
+    borderRadius: 63,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.32)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  questCopy: { flex: 1, minWidth: 0, gap: spacing.xs },
+  questStatus: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '900',
+    lineHeight: 22,
   },
   tierTeaser: {
     fontSize: fontSize.sm,
-    fontWeight: '700',
-    color: colors.subtext,
-    textAlign: 'center',
+    fontWeight: '800',
+    color: 'rgba(255,255,255,0.78)',
     letterSpacing: 0.3,
   },
   status: {
@@ -335,6 +499,97 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     maxWidth: 320,
   },
+  questProgressCard: {
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.34)',
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  questProgressTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  questProgressLabel: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  questProgressValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+  },
+  questTrack: {
+    height: 12,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.32)',
+    overflow: 'hidden',
+  },
+  questFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.yellow,
+  },
+  rewardStrip: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  rewardChip: {
+    flex: 1,
+    minHeight: 78,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+    padding: spacing.sm,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  rewardChipValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.lg,
+    fontWeight: '900',
+  },
+  rewardChipLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  rewardChipTrack: {
+    height: 6,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  rewardChipFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.yellow,
+  },
+  questCta: {
+    borderRadius: radius.full,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  questCtaText: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
   socialStrip: {
     fontSize: fontSize.sm,
     color: colors.streak,
@@ -343,17 +598,28 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     maxWidth: 320,
   },
+  socialCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.xs,
+  },
+  socialTitle: {
+    color: colors.text,
+    fontSize: fontSize.md,
+    fontWeight: '900',
+  },
   invitePrompt: {
     fontSize: fontSize.sm,
     color: colors.subtext,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: '800',
     lineHeight: 19,
     maxWidth: 320,
   },
   recoveryCard: {
     width: '100%',
-    maxWidth: 340,
     backgroundColor: '#FFF8DC',
     borderRadius: radius.lg,
     borderWidth: 1,

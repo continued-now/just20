@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -19,6 +20,7 @@ import {
   getSessionRecoverySummary,
   getStreak,
   getBestCompletedTime,
+  getCompletedDaysThisWeek,
   getCompletedRepsToday,
   getCompletedSetsToday,
   getUserSeed,
@@ -37,12 +39,12 @@ import { MilestoneCelebration } from '../components/MilestoneCelebration';
 import { BadgeUnlockCelebration } from '../components/BadgeUnlockCelebration';
 import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 import { BrandLogo } from '../components/BrandLogo';
-import { XpProgressCard } from '../components/XpProgressCard';
 import { devLog } from '../lib/diagnostics';
 import { getEquippedCosmetics, getProofCardTheme, type ProofCardThemeId } from '../lib/shop';
 import { useGrowthImageShare } from '../hooks/useGrowthImageShare';
 
 const CARD_BG = '#0F0F0F';
+const WEEKLY_CHEST_TARGET = 5;
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
 
 export default function CompletionScreen() {
@@ -106,8 +108,10 @@ export default function CompletionScreen() {
   const [totalSessions, setTotalSessions] = useState(0);
   const [inviteCode, setInviteCode] = useState('');
   const [reward, setReward] = useState<WorkoutXpReward | null>(null);
+  const [animatedRewardXp, setAnimatedRewardXp] = useState(0);
   const [badgeRewards, setBadgeRewards] = useState<BadgeUnlockResult[]>([]);
   const [totalXp, setTotalXp] = useState(0);
+  const [completedDaysThisWeek, setCompletedDaysThisWeek] = useState(0);
   const [recoverySummary, setRecoverySummary] = useState<SessionRecoverySummary | null>(null);
   const [proofThemeId, setProofThemeId] = useState<ProofCardThemeId | null>(null);
   const proofTheme = getProofCardTheme(proofThemeId);
@@ -130,6 +134,30 @@ export default function CompletionScreen() {
     };
   }, []);
 
+  const rewardXpTotal =
+    (reward?.daily ?? 0) +
+    (reward?.milestone ?? 0) +
+    (recoverySummary?.recoveryXpAwarded ?? 0) +
+    badgeRewards.reduce((sum, badge) => sum + badge.xpAwarded, 0);
+
+  useEffect(() => {
+    if (rewardXpTotal <= 0) {
+      setAnimatedRewardXp(0);
+      return;
+    }
+
+    setAnimatedRewardXp(0);
+    const startedAt = Date.now();
+    const countDurationMs = 850;
+    const timer = setInterval(() => {
+      const progress = Math.min(1, (Date.now() - startedAt) / countDurationMs);
+      setAnimatedRewardXp(Math.round(rewardXpTotal * progress));
+      if (progress >= 1) clearInterval(timer);
+    }, 30);
+
+    return () => clearInterval(timer);
+  }, [rewardXpTotal]);
+
   // Streak + personal best + sets today + user profile
   useEffect(() => {
     let mounted = true;
@@ -137,11 +165,12 @@ export default function CompletionScreen() {
     (async () => {
       try {
         const numericSessionId = Number.parseInt(sessionId ?? '', 10);
-        const [s, best, sets, dailyReps, seed, user, recovery] = await Promise.all([
+        const [s, best, sets, dailyReps, daysThisWeek, seed, user, recovery] = await Promise.all([
           getStreak(),
           getBestCompletedTime(),
           getCompletedSetsToday(),
           getCompletedRepsToday(),
+          getCompletedDaysThisWeek(),
           getUserSeed(),
           getOrCreateUser(),
           getSessionRecoverySummary(Number.isFinite(numericSessionId) ? numericSessionId : null),
@@ -150,6 +179,7 @@ export default function CompletionScreen() {
         setStreak(s.current);
         setSetsToday(sets);
         setCompletedRepsToday(Math.max(dailyReps, repCount));
+        setCompletedDaysThisWeek(daysThisWeek);
         setTotalSessions(s.totalSessions);
         setInviteCode(user.inviteCode);
         setDailyQuote(getDailyQuote(seed));
@@ -389,213 +419,263 @@ export default function CompletionScreen() {
     : isDuelMode
       ? 'Make someone beat this time.'
       : 'Make this a 7-day pushup pact.';
+  const chestDays = Math.min(completedDaysThisWeek, WEEKLY_CHEST_TARGET);
+  const chestProgress = (chestDays / WEEKLY_CHEST_TARGET) * 100;
+  const badgeTease =
+    badgeRewards.length > 0
+      ? `${badgeRewards[0].definition.icon} ${badgeRewards[0].definition.name} unlocked`
+      : isStreakMilestone
+        ? 'Milestone badge is live'
+        : 'Next badges track streaks, clean reps, and consistency';
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: proofTheme.cardBg }]}>
-      <ViewShot
-        ref={shotRef}
-        options={{ format: 'png', quality: 1.0 }}
-        style={[styles.card, { backgroundColor: proofTheme.cardBg }]}
+      <ScrollView
+        contentContainerStyle={[styles.screenContent, { backgroundColor: proofTheme.cardBg }]}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.cardTop}>
-          <BrandLogo size="sm" />
-          <Text style={styles.tagline}>{tagline}</Text>
-        </View>
-        <View
-          style={[
-            styles.proofStamp,
-            { backgroundColor: proofTheme.stampBg, borderColor: proofTheme.stampBorder },
-          ]}
+        <ViewShot
+          ref={shotRef}
+          options={{ format: 'png', quality: 1.0 }}
+          style={[styles.card, { backgroundColor: proofTheme.cardBg }]}
         >
-          <Text style={[styles.proofStampText, { color: proofTheme.stampText }]}>{proofLabel}</Text>
-        </View>
-
-        <View style={styles.repBlock}>
-          <Text style={styles.repNum}>{displayReps}</Text>
-          <Text style={styles.repLabel}>{repLabel}</Text>
-        </View>
-
-        <View style={styles.pillRow}>
-          {isPB && (
-            <View style={[styles.pill, styles.pbPill]}>
-              <Text style={styles.pillText}>Personal Best 🏆</Text>
-            </View>
-          )}
-          {durationSec > 0 && (
-            <View style={styles.pill}>
-              <Text style={styles.pillText}>in {durationSec}s</Text>
-            </View>
-          )}
-          {sessionTrackingMethod !== 'camera' && (
-            <View style={[styles.pill, styles.manualPill]}>
-              <Text style={styles.pillText}>
-                {sessionTrackingMethod === 'manual' ? 'Manual save' : 'Count fixed manually'}
-              </Text>
-            </View>
-          )}
-          {recoveryCopy && (
-            <View style={[styles.pill, styles.recoveryPill]}>
-              <Text style={styles.pillText}>{recoveryCopy}</Text>
-            </View>
-          )}
-          {recoverySummary && recoverySummary.recoveryXpAwarded > 0 && (
-            <View style={[styles.pill, styles.xpPill]}>
-              <Text style={styles.pillText}>+{recoverySummary.recoveryXpAwarded} recovery XP</Text>
-            </View>
-          )}
-          {reward && reward.daily > 0 && (
-            <View style={[styles.pill, styles.xpPill]}>
-              <Text style={styles.pillText}>
-                +{reward.daily} XP · {reward.label}
-              </Text>
-            </View>
-          )}
-          {reward && reward.milestone > 0 && (
-            <View style={[styles.pill, styles.xpPill]}>
-              <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
-            </View>
-          )}
-          {badgeRewards.map((badge) => (
-            <View key={badge.definition.id} style={[styles.pill, styles.badgePill]}>
-              <Text style={styles.pillText}>
-                {badge.definition.icon} {badge.definition.name} +{badge.xpAwarded} XP
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.proofGrid}>
-          <View
-            style={[
-              styles.proofMetric,
-              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
-            ]}
-          >
-            <Text style={styles.proofMetricValue}>{durationSec > 0 ? `${durationSec}s` : '—'}</Text>
-            <Text style={styles.proofMetricLabel}>time</Text>
+          <View style={styles.cardTop}>
+            <BrandLogo size="sm" />
+            <Text style={styles.tagline}>{tagline}</Text>
           </View>
           <View
             style={[
-              styles.proofMetric,
-              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+              styles.proofStamp,
+              { backgroundColor: proofTheme.stampBg, borderColor: proofTheme.stampBorder },
             ]}
           >
-            <Text style={styles.proofMetricValue}>{streak}</Text>
-            <Text style={styles.proofMetricLabel}>streak</Text>
+            <Text style={[styles.proofStampText, { color: proofTheme.stampText }]}>
+              {proofLabel}
+            </Text>
           </View>
-          <View
-            style={[
-              styles.proofMetric,
-              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
-            ]}
-          >
-            <Text style={styles.proofMetricValue}>{reward?.daily ?? 0}</Text>
-            <Text style={styles.proofMetricLabel}>xp</Text>
+
+          <View style={styles.repBlock}>
+            <Text style={styles.repNum}>{displayReps}</Text>
+            <Text style={styles.repLabel}>{repLabel}</Text>
           </View>
-        </View>
 
-        <XpProgressCard totalXp={totalXp} tone="dark" compact />
-
-        {locationName ? (
-          <Text style={[styles.location, { color: proofTheme.subtleText }]}>@ {locationName}</Text>
-        ) : null}
-
-        {/* Streak display — prominent "DAY X" identity marker */}
-        {streak > 0 && (
-          <View style={styles.streakBlock}>
-            <Text style={[styles.streakDay, { color: proofTheme.accent }]}>DAY {streak}</Text>
-            {isStreakMilestone && milestoneLine ? (
-              <Text style={styles.streakMilestone}>{milestoneLine}</Text>
-            ) : (
-              <Text style={styles.streakFlame}>🔥</Text>
+          <View style={styles.pillRow}>
+            {isPB && (
+              <View style={[styles.pill, styles.pbPill]}>
+                <Text style={styles.pillText}>Personal Best 🏆</Text>
+              </View>
             )}
-          </View>
-        )}
-
-        <View style={styles.cardBottom}>
-          {dailyQuote ? <Text style={styles.dailyQuote}>{`"${dailyQuote}"`}</Text> : null}
-          <Text style={[styles.hashtag, { color: proofTheme.subtleText }]}>#just20</Text>
-        </View>
-      </ViewShot>
-
-      <View style={[styles.actions, { backgroundColor: proofTheme.cardBg }]}>
-        {buttonsVisible ? (
-          <>
-            {!locationName && (
-              <TouchableOpacity
-                style={styles.locationBtn}
-                onPress={handleAddLocation}
-                disabled={locationStatus === 'loading'}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.locationBtnText}>
-                  {locationStatus === 'loading'
-                    ? 'Adding location...'
-                    : locationStatus === 'denied'
-                      ? 'Location skipped'
-                      : locationStatus === 'error'
-                        ? 'Location unavailable'
-                        : 'Add location to card'}
+            {durationSec > 0 && (
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>in {durationSec}s</Text>
+              </View>
+            )}
+            {sessionTrackingMethod !== 'camera' && (
+              <View style={[styles.pill, styles.manualPill]}>
+                <Text style={styles.pillText}>
+                  {sessionTrackingMethod === 'manual' ? 'Manual save' : 'Count fixed manually'}
                 </Text>
-              </TouchableOpacity>
+              </View>
             )}
-            <TouchableOpacity
-              style={[styles.igBtn, sharing && styles.igBtnDisabled]}
-              onPress={handleSystemProofShare}
-              disabled={sharing}
-              activeOpacity={0.85}
+            {recoveryCopy && (
+              <View style={[styles.pill, styles.recoveryPill]}>
+                <Text style={styles.pillText}>{recoveryCopy}</Text>
+              </View>
+            )}
+            {recoverySummary && recoverySummary.recoveryXpAwarded > 0 && (
+              <View style={[styles.pill, styles.xpPill]}>
+                <Text style={styles.pillText}>
+                  +{recoverySummary.recoveryXpAwarded} recovery XP
+                </Text>
+              </View>
+            )}
+            {reward && reward.daily > 0 && (
+              <View style={[styles.pill, styles.xpPill]}>
+                <Text style={styles.pillText}>
+                  +{reward.daily} XP · {reward.label}
+                </Text>
+              </View>
+            )}
+            {reward && reward.milestone > 0 && (
+              <View style={[styles.pill, styles.xpPill]}>
+                <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
+              </View>
+            )}
+            {badgeRewards.map((badge) => (
+              <View key={badge.definition.id} style={[styles.pill, styles.badgePill]}>
+                <Text style={styles.pillText}>
+                  {badge.definition.icon} {badge.definition.name} +{badge.xpAwarded} XP
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.proofGrid}>
+            <View
+              style={[
+                styles.proofMetric,
+                { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+              ]}
             >
-              {sharing ? (
-                <ActivityIndicator color="#000" />
+              <Text style={styles.proofMetricValue}>
+                {durationSec > 0 ? `${durationSec}s` : '—'}
+              </Text>
+              <Text style={styles.proofMetricLabel}>time</Text>
+            </View>
+            <View
+              style={[
+                styles.proofMetric,
+                { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+              ]}
+            >
+              <Text style={styles.proofMetricValue}>{streak}</Text>
+              <Text style={styles.proofMetricLabel}>streak</Text>
+            </View>
+            <View
+              style={[
+                styles.proofMetric,
+                { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+              ]}
+            >
+              <Text style={styles.proofMetricValue}>{reward?.daily ?? 0}</Text>
+              <Text style={styles.proofMetricLabel}>xp</Text>
+            </View>
+          </View>
+
+          {locationName ? (
+            <Text style={[styles.location, { color: proofTheme.subtleText }]}>
+              @ {locationName}
+            </Text>
+          ) : null}
+
+          {/* Streak display — prominent "DAY X" identity marker */}
+          {streak > 0 && (
+            <View style={styles.streakBlock}>
+              <Text style={[styles.streakDay, { color: proofTheme.accent }]}>DAY {streak}</Text>
+              {isStreakMilestone && milestoneLine ? (
+                <Text style={styles.streakMilestone}>{milestoneLine}</Text>
               ) : (
-                <Text style={styles.igBtnText}>Share proof card</Text>
+                <Text style={styles.streakFlame}>🔥</Text>
               )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.doAnotherBtn, sharing && styles.igBtnDisabled]}
-              onPress={handleInstagramShare}
-              disabled={sharing}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.doAnotherBtnText}>Post to Instagram</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.doAnotherBtn}
-              onPress={() => router.replace('/workout')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.doAnotherBtnText}>Do another set 🔥</Text>
-            </TouchableOpacity>
-            {inviteCode ? (
-              <View style={styles.inviteBanner}>
-                <Text style={styles.inviteLabel}>{inviteLabel}</Text>
-                <Text style={styles.inviteCode}>{inviteCode}</Text>
-                <Text style={styles.inviteSub}>{inviteSub}</Text>
-                <TouchableOpacity onPress={handleShareInvite} activeOpacity={0.8}>
-                  <Text style={styles.inviteShareText}>
-                    {isTestMode
-                      ? 'Share test →'
-                      : isDuelMode
-                        ? 'Share duel →'
-                        : 'Share challenge →'}
+            </View>
+          )}
+
+          <View style={styles.cardBottom}>
+            {dailyQuote ? <Text style={styles.dailyQuote}>{`"${dailyQuote}"`}</Text> : null}
+            <Text style={[styles.hashtag, { color: proofTheme.subtleText }]}>#just20</Text>
+          </View>
+        </ViewShot>
+
+        <View style={[styles.actions, { backgroundColor: proofTheme.cardBg }]}>
+          {buttonsVisible ? (
+            <>
+              <View style={styles.rewardMoment}>
+                <View style={styles.rewardMomentTop}>
+                  <View>
+                    <Text style={styles.rewardMomentTitle}>Reward unlocked</Text>
+                    <Text style={styles.rewardMomentTotal}>Total XP {totalXp}</Text>
+                  </View>
+                  <Text style={styles.rewardMomentBadge}>+{animatedRewardXp} XP</Text>
+                </View>
+                <View style={styles.rewardMomentGrid}>
+                  <View style={styles.rewardTile}>
+                    <Text style={styles.rewardTileValue}>+{animatedRewardXp}</Text>
+                    <Text style={styles.rewardTileLabel}>XP earned</Text>
+                  </View>
+                  <View style={styles.rewardRingTile}>
+                    <View style={styles.rewardRing}>
+                      <Text style={styles.rewardRingValue}>{streak}</Text>
+                    </View>
+                    <Text style={styles.rewardTileLabel}>day streak</Text>
+                  </View>
+                  <View style={styles.rewardTile}>
+                    <Text style={styles.rewardTileValue}>
+                      {chestDays}/{WEEKLY_CHEST_TARGET}
+                    </Text>
+                    <Text style={styles.rewardTileLabel}>chest</Text>
+                    <View style={styles.rewardChestTrack}>
+                      <View style={[styles.rewardChestFill, { width: `${chestProgress}%` }]} />
+                    </View>
+                  </View>
+                </View>
+                <Text style={styles.badgeTeaseText}>{badgeTease}</Text>
+              </View>
+              {!locationName && (
+                <TouchableOpacity
+                  style={styles.locationBtn}
+                  onPress={handleAddLocation}
+                  disabled={locationStatus === 'loading'}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.locationBtnText}>
+                    {locationStatus === 'loading'
+                      ? 'Adding location...'
+                      : locationStatus === 'denied'
+                        ? 'Location skipped'
+                        : locationStatus === 'error'
+                          ? 'Location unavailable'
+                          : 'Add location to card'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => router.push('/(tabs)/squad' as any)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.inviteShareText}>Invite to squad →</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-            <TouchableOpacity onPress={() => router.replace('/')} activeOpacity={0.6}>
-              <Text style={styles.skipText}>skip →</Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <View style={{ height: 80 }} />
-        )}
-      </View>
+              )}
+              <TouchableOpacity
+                style={[styles.igBtn, sharing && styles.igBtnDisabled]}
+                onPress={handleSystemProofShare}
+                disabled={sharing}
+                activeOpacity={0.85}
+              >
+                {sharing ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.igBtnText}>Share proof card</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.doAnotherBtn, sharing && styles.igBtnDisabled]}
+                onPress={handleInstagramShare}
+                disabled={sharing}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.doAnotherBtnText}>Post to Instagram</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.doAnotherBtn}
+                onPress={() => router.replace('/workout')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.doAnotherBtnText}>Do another set 🔥</Text>
+              </TouchableOpacity>
+              {inviteCode ? (
+                <View style={styles.inviteBanner}>
+                  <Text style={styles.inviteLabel}>{inviteLabel}</Text>
+                  <Text style={styles.inviteCode}>{inviteCode}</Text>
+                  <Text style={styles.inviteSub}>{inviteSub}</Text>
+                  <TouchableOpacity onPress={handleShareInvite} activeOpacity={0.8}>
+                    <Text style={styles.inviteShareText}>
+                      {isTestMode
+                        ? 'Share test →'
+                        : isDuelMode
+                          ? 'Share duel →'
+                          : 'Share challenge →'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => router.push('/(tabs)/squad' as any)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.inviteShareText}>Invite to squad →</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <TouchableOpacity onPress={() => router.replace('/')} activeOpacity={0.6}>
+                <Text style={styles.skipText}>skip →</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <View style={{ height: 80 }} />
+          )}
+        </View>
+      </ScrollView>
 
       <MilestoneCelebration
         streak={streak}
@@ -633,8 +713,11 @@ function getRecoveryCopy(
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: CARD_BG },
+  screenContent: {
+    paddingBottom: spacing.xl,
+  },
   card: {
-    flex: 1,
+    minHeight: 560,
     backgroundColor: CARD_BG,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xxl,
@@ -750,6 +833,111 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  rewardMoment: {
+    width: '100%',
+    borderRadius: radius.lg,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    gap: spacing.sm,
+  },
+  rewardMomentTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  rewardMomentTitle: {
+    color: '#FFFFFF',
+    fontSize: fontSize.sm,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  rewardMomentTotal: {
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  rewardMomentBadge: {
+    color: colors.yellow,
+    fontSize: fontSize.lg,
+    fontWeight: '900',
+  },
+  rewardMomentGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  rewardTile: {
+    flex: 1,
+    minHeight: 66,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    padding: spacing.sm,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  rewardRingTile: {
+    flex: 1,
+    minHeight: 66,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,159,28,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,159,28,0.28)',
+    padding: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  rewardTileValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.lg,
+    fontWeight: '900',
+  },
+  rewardTileLabel: {
+    color: 'rgba(255,255,255,0.48)',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  rewardRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 3,
+    borderColor: colors.streak,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,159,28,0.2)',
+  },
+  rewardRingValue: {
+    color: '#FFFFFF',
+    fontSize: fontSize.md,
+    fontWeight: '900',
+  },
+  rewardChestTrack: {
+    height: 6,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  rewardChestFill: {
+    height: '100%',
+    borderRadius: radius.full,
+    backgroundColor: colors.brand,
+  },
+  badgeTeaseText: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   location: {
     textAlign: 'center',
