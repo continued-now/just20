@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   PanResponder,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -27,7 +28,14 @@ import { markOnboardingComplete, updateUsername } from '../lib/user';
 import { validateUsername } from '../lib/validation';
 
 const { width } = Dimensions.get('window');
-const TOTAL_STEPS = 5;
+const HOURS = Array.from({ length: 16 }, (_, i) => i + 6);
+const TOTAL_STEPS = 4;
+
+function formatHour(hour: number): string {
+  if (hour === 12) return '12pm';
+  if (hour < 12) return `${hour}am`;
+  return `${hour - 12}pm`;
+}
 
 // Bounces in on mount — each step re-mounts the mascot so the spring fires every time
 function MascotBounce({ emoji }: { emoji: string }) {
@@ -43,6 +51,8 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [username, setUsername] = useState('');
   const [usernameError, setUsernameError] = useState('');
+  const [scheduledHour, setScheduledHour] = useState(DEFAULT_SCHEDULED_HOUR);
+  const [submitting, setSubmitting] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,7 +98,7 @@ export default function OnboardingScreen() {
     goToStep(2);
   }
 
-  async function finish() {
+  async function finish(notificationsEnabled = false) {
     const validation = validateUsername(username, { optional: true });
     if (validation.error) {
       setUsernameError(validation.error);
@@ -96,18 +106,35 @@ export default function OnboardingScreen() {
       return;
     }
     if (validation.username) await updateUsername(validation.username);
+    await setSetting('notification_mode', DEFAULT_NOTIFICATION_MODE);
+    await setSetting('scheduled_hour', String(scheduledHour));
+    await setSetting('notifications_enabled', notificationsEnabled ? '1' : '0');
     await markOnboardingComplete();
     router.replace('/');
   }
 
   async function handleAllow() {
-    const granted = await requestPermission();
-    if (granted) {
-      await setSetting('notification_mode', DEFAULT_NOTIFICATION_MODE);
-      await setSetting('scheduled_hour', String(DEFAULT_SCHEDULED_HOUR));
-      await scheduleWindowWithFallbackNudges(DEFAULT_SCHEDULED_HOUR);
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const granted = await requestPermission();
+      if (granted) {
+        await scheduleWindowWithFallbackNudges(scheduledHour);
+      }
+      await finish(granted);
+    } finally {
+      setSubmitting(false);
     }
-    await finish();
+  }
+
+  async function handleSkip() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await finish(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -127,21 +154,39 @@ export default function OnboardingScreen() {
 
         {/* Step content */}
         <Animated.View style={[styles.content, { opacity: fadeAnim }]} {...panResponder.panHandlers}>
-          {step === 0 && <Step0 onNext={() => goToStep(1)} />}
-          {step === 1 && (
-            <Step1
-              username={username}
-              error={usernameError}
-              onChangeUsername={(value) => {
-                setUsername(value);
-                setUsernameError('');
-              }}
-              onNext={handleUsernameNext}
-            />
-          )}
-          {step === 2 && <Step2 onNext={() => goToStep(3)} />}
-          {step === 3 && <Step3 onNext={() => goToStep(4)} />}
-          {step === 4 && <Step4 onAllow={handleAllow} onSkip={finish} />}
+          <ScrollView
+            contentContainerStyle={styles.contentScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {step === 0 && <Step0 onNext={() => goToStep(1)} />}
+            {step === 1 && (
+              <Step1
+                username={username}
+                error={usernameError}
+                onChangeUsername={(value) => {
+                  setUsername(value);
+                  setUsernameError('');
+                }}
+                onNext={handleUsernameNext}
+              />
+            )}
+            {step === 2 && (
+              <Step2
+                scheduledHour={scheduledHour}
+                onHourChange={setScheduledHour}
+                onNext={() => goToStep(3)}
+              />
+            )}
+            {step === 3 && (
+              <Step3
+                scheduledHour={scheduledHour}
+                submitting={submitting}
+                onAllow={handleAllow}
+                onSkip={handleSkip}
+              />
+            )}
+          </ScrollView>
         </Animated.View>
 
         {/* Dots */}
@@ -206,7 +251,15 @@ function Step1({
   );
 }
 
-function Step2({ onNext }: { onNext: () => void }) {
+function Step2({
+  scheduledHour,
+  onHourChange,
+  onNext,
+}: {
+  scheduledHour: number;
+  onHourChange: (hour: number) => void;
+  onNext: () => void;
+}) {
   const today = new Date();
   const miniCal = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
@@ -221,8 +274,8 @@ function Step2({ onNext }: { onNext: () => void }) {
   return (
     <View style={styles.step}>
       <MascotBounce emoji="🔥" />
-      <Text style={styles.headline}>Show up every day.</Text>
-      <Text style={styles.body}>Miss a day, the streak resets. Miss by one? Your freeze token kicks in.</Text>
+      <Text style={styles.headline}>Pick your{'\n'}daily window.</Text>
+      <Text style={styles.body}>Choose the time you can defend. Miss a day and the streak resets.</Text>
 
       <View style={styles.calDemo}>
         {miniCal.map((d, i) => (
@@ -236,68 +289,62 @@ function Step2({ onNext }: { onNext: () => void }) {
       </View>
 
       <View style={styles.noteRow}>
-        <Text style={styles.noteEmoji}>🧊</Text>
-        <Text style={styles.noteText}>Every 7-day streak earns a freeze token. Use it wisely.</Text>
+        <Text style={styles.noteEmoji}>🔥</Text>
+        <Text style={styles.noteText}>Every completed day extends the streak. Earn freeze tokens later by staying consistent.</Text>
+      </View>
+
+      <View style={styles.timePicker}>
+        <Text style={styles.timePickerLabel}>Reminder window</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.hourRow}
+        >
+          {HOURS.map(hour => (
+            <TouchableOpacity
+              key={hour}
+              style={[styles.hourChip, hour === scheduledHour && styles.hourChipActive]}
+              onPress={() => onHourChange(hour)}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.hourChipText, hour === scheduledHour && styles.hourChipTextActive]}>
+                {formatHour(hour)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>GOT IT →</Text>
+        <Text style={styles.btnText}>USE {formatHour(scheduledHour).toUpperCase()} →</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-function Step3({ onNext }: { onNext: () => void }) {
-  return (
-    <View style={styles.step}>
-      <MascotBounce emoji="⚡" />
-      <Text style={styles.headline}>Pick a time.{'\n'}Protect the streak.</Text>
-      <Text style={styles.body}>Default is a daily 10-minute window. Hit it clean, or backup nudges start chasing you.</Text>
-
-      <View style={styles.mechCard}>
-        <View style={styles.mechRow}>
-          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>⏰</Text></View>
-          <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>Set-time window</Text>
-            <Text style={styles.mechSub}>A clean daily slot with 10 minutes on the clock.</Text>
-          </View>
-        </View>
-        <View style={styles.mechDivider} />
-        <View style={styles.mechRow}>
-          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>✅</Text></View>
-          <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>More XP on time</Text>
-            <Text style={styles.mechSub}>The earlier you honor the plan, the better the reward.</Text>
-          </View>
-        </View>
-        <View style={styles.mechDivider} />
-        <View style={styles.mechRow}>
-          <View style={styles.mechIconBox}><Text style={styles.mechEmoji}>📍</Text></View>
-          <View style={styles.mechTextWrap}>
-            <Text style={styles.mechTitle}>Anywhere</Text>
-            <Text style={styles.mechSub}>Floor. Office. Kitchen. Zero equipment needed.</Text>
-          </View>
-        </View>
-      </View>
-
-      <TouchableOpacity style={styles.btn} onPress={onNext}>
-        <Text style={styles.btnText}>UNDERSTOOD →</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-function Step4({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void }) {
+function Step3({
+  scheduledHour,
+  submitting,
+  onAllow,
+  onSkip,
+}: {
+  scheduledHour: number;
+  submitting: boolean;
+  onAllow: () => void;
+  onSkip: () => void;
+}) {
   return (
     <View style={styles.step}>
       <MascotBounce emoji="😤" />
       <Text style={styles.headline}>We will keep{'\n'}you honest.</Text>
-      <Text style={styles.body}>First, your window opens. If you miss it, nudges get louder and XP starts dropping.</Text>
+      <Text style={styles.body}>
+        Your {formatHour(scheduledHour)} window opens first. If you miss it, backup nudges begin.
+      </Text>
 
       <View style={styles.notifPreview}>
         <View style={styles.notifRow}>
           <Text style={styles.notifIcon}>⏰</Text>
-          <Text style={styles.notifMsg}>Your window is open. 10 minutes.</Text>
+          <Text style={styles.notifMsg}>{formatHour(scheduledHour)} window is open. 10 minutes.</Text>
         </View>
         <View style={styles.notifDivider} />
         <View style={styles.notifRow}>
@@ -311,10 +358,14 @@ function Step4({ onAllow, onSkip }: { onAllow: () => void; onSkip: () => void })
         </View>
       </View>
 
-      <TouchableOpacity style={styles.btn} onPress={onAllow}>
-        <Text style={styles.btnText}>ALLOW NOTIFICATIONS →</Text>
+      <TouchableOpacity
+        style={[styles.btn, submitting && styles.btnDisabled]}
+        onPress={onAllow}
+        disabled={submitting}
+      >
+        <Text style={styles.btnText}>{submitting ? 'SAVING...' : 'ALLOW NOTIFICATIONS →'}</Text>
       </TouchableOpacity>
-      <TouchableOpacity onPress={onSkip} style={styles.skipBtn}>
+      <TouchableOpacity onPress={onSkip} style={styles.skipBtn} disabled={submitting}>
         <Text style={styles.skipText}>skip (not recommended)</Text>
       </TouchableOpacity>
     </View>
@@ -339,7 +390,12 @@ const styles = StyleSheet.create({
   backText: { fontSize: fontSize.sm, fontWeight: '700', color: colors.subtext },
   counter: { fontSize: fontSize.sm, fontWeight: '700', color: colors.subtext },
 
-  content: { flex: 1, justifyContent: 'center' },
+  content: { flex: 1 },
+  contentScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+  },
 
   step: {
     paddingHorizontal: spacing.xl,
@@ -401,6 +457,7 @@ const styles = StyleSheet.create({
     minWidth: width * 0.7,
     alignItems: 'center',
   },
+  btnDisabled: { opacity: 0.62 },
   btnText: {
     color: colors.bg,
     fontSize: fontSize.md,
@@ -455,6 +512,46 @@ const styles = StyleSheet.create({
   },
   noteEmoji: { fontSize: 20 },
   noteText: { flex: 1, fontSize: fontSize.sm, color: colors.subtext, fontWeight: '500', lineHeight: 18 },
+
+  timePicker: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  timePickerLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '800',
+    color: colors.subtext,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  hourRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  hourChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  hourChipActive: {
+    backgroundColor: colors.text,
+    borderColor: colors.text,
+  },
+  hourChipText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.subtext,
+  },
+  hourChipTextActive: { color: colors.bg },
 
   // Mechanic card (Step 3)
   mechCard: {

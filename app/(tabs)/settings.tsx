@@ -64,6 +64,7 @@ export default function SettingsScreen() {
           savedLockIn,
           savedUgcRepostOk,
           savedMaxDailyNudges,
+          savedNotificationsEnabled,
         ] = await Promise.all([
           getRemainingNudgeCount(),
           hasScheduledWindowNotification(),
@@ -74,11 +75,15 @@ export default function SettingsScreen() {
           getBooleanSetting('lock_in_mode_enabled', false),
           getBooleanSetting('ugc_repost_ok', false),
           getSetting('max_daily_nudges'),
+          getSetting('notifications_enabled'),
         ]);
         if (!active) return;
         const initialMode = normalizeMode(savedMode);
         setMode(initialMode);
-        setNotificationsOn(initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0);
+        setNotificationsOn(
+          savedNotificationsEnabled === '1' &&
+            (initialMode === 'strict' ? scheduledActive : scheduledActive || nudgeCount > 0)
+        );
         if (savedHour) setScheduledHour(parseInt(savedHour, 10));
         setWidgetUrgency(savedWidgetUrgency);
         setWatchNudges(savedWatchNudges);
@@ -108,6 +113,7 @@ export default function SettingsScreen() {
   async function enableMode(next: NotificationMode, hour = scheduledHour): Promise<boolean> {
     const granted = await ensureNotificationPermission();
     if (!granted) return false;
+    await setSetting('notifications_enabled', '1');
 
     if (next === 'random') {
       await cancelWindowedNotification();
@@ -198,6 +204,7 @@ export default function SettingsScreen() {
     try {
       await cancelAllNudges();
       await cancelWindowedNotification();
+      await setSetting('notifications_enabled', '0');
       setNotificationsOn(false);
       Alert.alert('Notifications cleared', 'All reminders cancelled.');
       scheduleSharedJust20StatusUpdate();
@@ -389,6 +396,7 @@ export default function SettingsScreen() {
                   } else {
                     await cancelAllNudges();
                     await cancelWindowedNotification();
+                    await setSetting('notifications_enabled', '0');
                   }
                 } catch {
                   setNotificationsOn(previous);

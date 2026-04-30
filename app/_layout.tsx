@@ -52,8 +52,10 @@ export default function RootLayout() {
 
       if (!user.onboardingComplete) return;
 
-      // Notifications are non-blocking — schedule after UI is ready.
-      requestPermission().then(async granted => {
+      // Notifications are non-blocking and only requested after explicit opt-in.
+      getSetting('notifications_enabled').then(async enabled => {
+        if (enabled !== '1') return;
+        const granted = await requestPermission();
         if (!granted) return;
         const [s, done, savedMode, savedHour] = await Promise.all([
           getStreak(),
