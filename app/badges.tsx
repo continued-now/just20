@@ -3,7 +3,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Modal,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,8 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BadgePin } from '../components/BadgePin';
 import { colors, fontSize, radius, spacing } from '../constants/theme';
+import { useGrowthImageShare } from '../hooks/useGrowthImageShare';
 import {
-  buildBadgeBragText,
   evaluateBadgeUnlocks,
   getBadgeCollection,
   markBadgeShared,
@@ -45,6 +44,7 @@ export default function BadgesScreen() {
   const [filter, setFilter] = useState<Filter>('all');
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [badgeFrame, setBadgeFrame] = useState<BadgeFrameStyle | null>(null);
+  const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   useFocusEffect(
     useCallback(() => {
@@ -73,16 +73,19 @@ export default function BadgesScreen() {
   );
 
   const filteredBadges = useMemo(
-    () => badges.filter(item => filter === 'all' || item.definition.category === filter),
+    () => badges.filter((item) => filter === 'all' || item.definition.category === filter),
     [badges, filter]
   );
-  const unlockedCount = badges.filter(item => item.unlocked).length;
+  const unlockedCount = badges.filter((item) => item.unlocked).length;
   const totalBadgeXp = badges.reduce((sum, item) => sum + (item.unlocked ? item.xpAwarded : 0), 0);
-  const nextBadge = badges.find(item => !item.unlocked && !item.hiddenUntilUnlocked) ?? badges.find(item => !item.unlocked);
+  const nextBadge =
+    badges.find((item) => !item.unlocked && !item.hiddenUntilUnlocked) ??
+    badges.find((item) => !item.unlocked);
   const gridWidth = Math.max(0, width - spacing.lg * 2);
-  const badgeTileWidth = Math.max(84, Math.floor(
-    (gridWidth - BADGE_GRID_GAP * (BADGE_GRID_COLUMNS - 1)) / BADGE_GRID_COLUMNS
-  ));
+  const badgeTileWidth = Math.max(
+    84,
+    Math.floor((gridWidth - BADGE_GRID_GAP * (BADGE_GRID_COLUMNS - 1)) / BADGE_GRID_COLUMNS)
+  );
 
   async function handleBrag(item: BadgeProgress) {
     if (!item.unlocked) return;
@@ -94,21 +97,34 @@ export default function BadgesScreen() {
       source: 'badge',
     });
     try {
-      await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface: 'badge_case' }));
-      await Share.share({ message: buildBadgeBragText(item.definition, inviteCode) });
+      const shared = await shareGrowthPayload(payload, 'badge_case', {
+        body: `I unlocked ${item.definition.name}. ${item.definition.description}`,
+        heroGlyph: item.definition.icon,
+        statLabel: 'badge XP',
+        statValue: `+${item.definition.xp}`,
+        title: item.definition.name,
+        tone: 'badge',
+      });
+      if (!shared) return;
       await markBadgeShared(item.definition.id);
-      setBadges(prev => prev.map(b => (
-        b.definition.id === item.definition.id ? { ...b, shareCount: b.shareCount + 1 } : b
-      )));
-      setSelected(prev => prev && prev.definition.id === item.definition.id
-        ? { ...prev, shareCount: prev.shareCount + 1 }
-        : prev);
+      setBadges((prev) =>
+        prev.map((b) =>
+          b.definition.id === item.definition.id ? { ...b, shareCount: b.shareCount + 1 } : b
+        )
+      );
+      setSelected((prev) =>
+        prev && prev.definition.id === item.definition.id
+          ? { ...prev, shareCount: prev.shareCount + 1 }
+          : prev
+      );
     } catch (error) {
-      await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
-        surface: 'badge_case',
-        badgeId: item.definition.id,
-        message: error instanceof Error ? error.message : String(error),
-      }));
+      await recordGrowthEvent(
+        growthEventFromPayload(payload, 'share_failed', {
+          surface: 'badge_case',
+          badgeId: item.definition.id,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      );
     }
   }
 
@@ -120,14 +136,20 @@ export default function BadgesScreen() {
             <Text style={styles.eyebrow}>COLLECTIBLES</Text>
             <Text style={styles.heading}>Badges</Text>
           </View>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} activeOpacity={0.72}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.closeBtn}
+            activeOpacity={0.72}
+          >
             <Text style={styles.closeText}>Close</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.summaryCard}>
           <View>
-            <Text style={styles.summaryNum}>{unlockedCount}/{badges.length}</Text>
+            <Text style={styles.summaryNum}>
+              {unlockedCount}/{badges.length}
+            </Text>
             <Text style={styles.summaryLabel}>unlocked</Text>
           </View>
           <View style={styles.summaryDivider} />
@@ -138,7 +160,11 @@ export default function BadgesScreen() {
         </View>
 
         {nextBadge && (
-          <TouchableOpacity style={styles.nextCard} onPress={() => setSelected(nextBadge)} activeOpacity={0.84}>
+          <TouchableOpacity
+            style={styles.nextCard}
+            onPress={() => setSelected(nextBadge)}
+            activeOpacity={0.84}
+          >
             <FramedBadgePin
               badge={nextBadge.definition}
               size={76}
@@ -159,8 +185,12 @@ export default function BadgesScreen() {
           </TouchableOpacity>
         )}
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-          {FILTERS.map(item => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {FILTERS.map((item) => (
             <TouchableOpacity
               key={item.id}
               style={[styles.filterChip, filter === item.id && styles.filterChipActive]}
@@ -175,7 +205,7 @@ export default function BadgesScreen() {
         </ScrollView>
 
         <View style={styles.grid}>
-          {filteredBadges.map(item => (
+          {filteredBadges.map((item) => (
             <BadgeTile
               key={item.definition.id}
               item={item}
@@ -193,6 +223,7 @@ export default function BadgesScreen() {
         onClose={() => setSelected(null)}
         onBrag={handleBrag}
       />
+      {visualShareElement}
     </SafeAreaView>
   );
 }
@@ -274,7 +305,9 @@ function BadgeDetailModal({
               <Text style={styles.modalMetaLabel}>XP</Text>
             </View>
             <View style={styles.modalMeta}>
-              <Text style={styles.modalMetaValue}>{item.unlocked ? 'Yes' : `${item.percent}%`}</Text>
+              <Text style={styles.modalMetaValue}>
+                {item.unlocked ? 'Yes' : `${item.percent}%`}
+              </Text>
               <Text style={styles.modalMetaLabel}>{item.unlocked ? 'Unlocked' : 'Progress'}</Text>
             </View>
             <View style={styles.modalMeta}>
@@ -290,13 +323,21 @@ function BadgeDetailModal({
           </View>
 
           {item.unlocked && unlockedDate ? (
-            <Text style={styles.unlockDate}>Unlocked {unlockedDate} · bragged {item.shareCount} times</Text>
+            <Text style={styles.unlockDate}>
+              Unlocked {unlockedDate} · bragged {item.shareCount} times
+            </Text>
           ) : (
-            <Text style={styles.unlockDate}>Rarity appears once enough athletes have unlocked this badge.</Text>
+            <Text style={styles.unlockDate}>
+              Rarity appears once enough athletes have unlocked this badge.
+            </Text>
           )}
 
           {item.unlocked ? (
-            <TouchableOpacity style={styles.bragBtn} onPress={() => onBrag(item)} activeOpacity={0.84}>
+            <TouchableOpacity
+              style={styles.bragBtn}
+              onPress={() => onBrag(item)}
+              activeOpacity={0.84}
+            >
               <Text style={styles.bragText}>BRAG →</Text>
             </TouchableOpacity>
           ) : (
@@ -600,7 +641,12 @@ const styles = StyleSheet.create({
   },
   requirementText: { fontSize: fontSize.sm, color: colors.text, fontWeight: '900' },
   requirementProgress: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '700' },
-  unlockDate: { fontSize: fontSize.xs, color: colors.subtext, fontWeight: '700', textAlign: 'center' },
+  unlockDate: {
+    fontSize: fontSize.xs,
+    color: colors.subtext,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   bragBtn: {
     width: '100%',
     borderRadius: radius.md,
@@ -617,5 +663,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   lockedText: { color: colors.subtext, fontSize: fontSize.md, fontWeight: '900' },
-  modalClose: { color: colors.subtext, fontSize: fontSize.sm, fontWeight: '700', padding: spacing.sm },
+  modalClose: {
+    color: colors.subtext,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    padding: spacing.sm,
+  },
 });

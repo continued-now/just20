@@ -29,12 +29,7 @@ import {
 import { awardWorkoutXp, getXp, type WorkoutXpReward } from '../lib/xp';
 import { syncCompletionToCloud } from '../lib/social';
 import { getOrCreateUser } from '../lib/user';
-import {
-  buildSharePayload,
-  growthEventFromPayload,
-  recordGrowthEvent,
-  type GrowthSharePayload,
-} from '../lib/growth';
+import { buildSharePayload, recordGrowthEvent } from '../lib/growth';
 import { evaluateBadgeUnlocks, type BadgeUnlockResult } from '../lib/badges';
 import { getDailyQuote } from '../lib/quotes';
 import { isMilestoneDay, MILESTONE_COPY } from '../lib/milestones';
@@ -44,11 +39,8 @@ import { scheduleSharedJust20StatusUpdate } from '../lib/widgetStatus';
 import { BrandLogo } from '../components/BrandLogo';
 import { XpProgressCard } from '../components/XpProgressCard';
 import { devLog } from '../lib/diagnostics';
-import {
-  getEquippedCosmetics,
-  getProofCardTheme,
-  type ProofCardThemeId,
-} from '../lib/shop';
+import { getEquippedCosmetics, getProofCardTheme, type ProofCardThemeId } from '../lib/shop';
+import { useGrowthImageShare } from '../hooks/useGrowthImageShare';
 
 const CARD_BG = '#0F0F0F';
 type LocationStatus = 'idle' | 'loading' | 'added' | 'denied' | 'error';
@@ -81,6 +73,7 @@ export default function CompletionScreen() {
   }>();
   const router = useRouter();
   const shotRef = useRef<ViewShot>(null);
+  const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   const repCount = parseInt(reps ?? '20', 10);
   const durationMs = parseInt(duration ?? '0', 10);
@@ -128,7 +121,7 @@ export default function CompletionScreen() {
   useEffect(() => {
     let mounted = true;
     getEquippedCosmetics()
-      .then(equipped => {
+      .then((equipped) => {
         if (mounted) setProofThemeId(equipped.proofCardTheme);
       })
       .catch(() => {});
@@ -194,7 +187,9 @@ export default function CompletionScreen() {
         if (mounted) setTotalXp(xp.totalEarned);
         scheduleSharedJust20StatusUpdate();
       } catch (error) {
-        devLog('completion_rewards_failed', { message: error instanceof Error ? error.message : String(error) });
+        devLog('completion_rewards_failed', {
+          message: error instanceof Error ? error.message : String(error),
+        });
         // Completion proof card should stay usable even if rewards/social state fails.
       }
     })();
@@ -224,10 +219,9 @@ export default function CompletionScreen() {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
       const [place] = await Location.reverseGeocodeAsync(loc.coords);
       const parts = place
-        ? [
-            place.district || place.subregion || place.street,
-            place.city || place.region,
-          ].filter(Boolean)
+        ? [place.district || place.subregion || place.street, place.city || place.region].filter(
+            Boolean
+          )
         : [];
 
       if (parts.length) {
@@ -249,25 +243,20 @@ export default function CompletionScreen() {
           inviteCode,
         })
       : isDuelMode
-      ? buildSharePayload('duel', {
-          inviteCode,
-          targetSeconds: durationSec > 0 ? durationSec : duelTargetSec,
-          streakDays: streak,
-          source: 'completion',
-        })
-      : buildSharePayload('challenge', {
-          inviteCode,
-          streakDays: streak,
-          challengeDays: 7,
-          source: 'completion',
-        });
-    try {
-      await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface: 'completion_invite' }));
-      await Share.share({ message: payload.message, title: payload.title });
-    } catch (error) {
-      await recordShareFailure(payload, 'completion_invite', error);
-      devLog('share_invite_failed', { message: error instanceof Error ? error.message : String(error) });
-    }
+        ? buildSharePayload('duel', {
+            inviteCode,
+            targetSeconds: durationSec > 0 ? durationSec : duelTargetSec,
+            streakDays: streak,
+            source: 'completion',
+          })
+        : buildSharePayload('challenge', {
+            inviteCode,
+            streakDays: streak,
+            challengeDays: 7,
+            source: 'completion',
+          });
+    const shared = await shareGrowthPayload(payload, 'completion_invite');
+    if (!shared) devLog('share_invite_failed', { surface: 'completion_invite' });
   }
 
   async function handleInstagramShare() {
@@ -307,7 +296,9 @@ export default function CompletionScreen() {
           message: error instanceof Error ? error.message : String(error),
         },
       });
-      devLog('instagram_share_failed', { message: error instanceof Error ? error.message : String(error) });
+      devLog('instagram_share_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setSharing(false);
     }
@@ -344,58 +335,60 @@ export default function CompletionScreen() {
           message: error instanceof Error ? error.message : String(error),
         },
       });
-      devLog('system_proof_share_failed', { message: error instanceof Error ? error.message : String(error) });
+      devLog('system_proof_share_failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
     } finally {
       setSharing(false);
     }
   }
 
   const isStreakMilestone = streak > 0 && isMilestoneDay(streak);
-  const milestoneLine = isStreakMilestone
-    ? (MILESTONE_COPY[streak] ?? '').split('\n')[1]
-    : null;
+  const milestoneLine = isStreakMilestone ? (MILESTONE_COPY[streak] ?? '').split('\n')[1] : null;
 
-  const displayReps = sessionRecoveryType !== 'none'
-    ? repCount
-    : isTestMode
-    ? repCount
-    : isDuelMode
-    ? repCount
-    : setsToday > 1
-    ? completedRepsToday
-    : repCount;
-  const repLabel = sessionRecoveryType === 'streak_patch'
-    ? `streak patch · target ${sessionTargetReps}`
-    : sessionRecoveryType === 'debt_set'
-    ? `debt set · target ${sessionTargetReps}`
-    : isTestMode
-    ? 'test reps'
-    : isDuelMode
-    ? 'duel reps'
-    : setsToday > 1
-    ? `pushups · ${setsToday} sets`
-    : 'pushups';
+  const displayReps =
+    sessionRecoveryType !== 'none'
+      ? repCount
+      : isTestMode
+        ? repCount
+        : isDuelMode
+          ? repCount
+          : setsToday > 1
+            ? completedRepsToday
+            : repCount;
+  const repLabel =
+    sessionRecoveryType === 'streak_patch'
+      ? `streak patch · target ${sessionTargetReps}`
+      : sessionRecoveryType === 'debt_set'
+        ? `debt set · target ${sessionTargetReps}`
+        : isTestMode
+          ? 'test reps'
+          : isDuelMode
+            ? 'duel reps'
+            : setsToday > 1
+              ? `pushups · ${setsToday} sets`
+              : 'pushups';
   const tagline = isTestMode
     ? 'monthly receipt, no hiding.'
     : isDuelMode
-    ? 'duel receipt, clean reps only.'
-    : setsToday > 1
-    ? `built different, ${setsToday} sets strong.`
-    : 'built different, one set at a time.';
+      ? 'duel receipt, clean reps only.'
+      : setsToday > 1
+        ? `built different, ${setsToday} sets strong.`
+        : 'built different, one set at a time.';
   const proofLabel = isTestMode ? 'Monthly Test' : isDuelMode ? 'Duel Proof' : 'Proof Card';
   const recoveryCopy = getRecoveryCopy(recoverySummary, sessionRecoveryType, repairedDate ?? null);
   const inviteLabel = isTestMode
     ? 'Share test'
     : isDuelMode
-    ? 'Call a rematch'
-    : totalSessions === 1
-    ? 'Bring a friend'
-    : 'Start a challenge';
+      ? 'Call a rematch'
+      : totalSessions === 1
+        ? 'Bring a friend'
+        : 'Start a challenge';
   const inviteSub = isTestMode
     ? 'Turn the 30-day test into a receipt.'
     : isDuelMode
-    ? 'Make someone beat this time.'
-    : 'Make this a 7-day pushup pact.';
+      ? 'Make someone beat this time.'
+      : 'Make this a 7-day pushup pact.';
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: proofTheme.cardBg }]}>
@@ -452,7 +445,9 @@ export default function CompletionScreen() {
           )}
           {reward && reward.daily > 0 && (
             <View style={[styles.pill, styles.xpPill]}>
-              <Text style={styles.pillText}>+{reward.daily} XP · {reward.label}</Text>
+              <Text style={styles.pillText}>
+                +{reward.daily} XP · {reward.label}
+              </Text>
             </View>
           )}
           {reward && reward.milestone > 0 && (
@@ -460,7 +455,7 @@ export default function CompletionScreen() {
               <Text style={styles.pillText}>+{reward.milestone} milestone XP</Text>
             </View>
           )}
-          {badgeRewards.map(badge => (
+          {badgeRewards.map((badge) => (
             <View key={badge.definition.id} style={[styles.pill, styles.badgePill]}>
               <Text style={styles.pillText}>
                 {badge.definition.icon} {badge.definition.name} +{badge.xpAwarded} XP
@@ -470,15 +465,30 @@ export default function CompletionScreen() {
         </View>
 
         <View style={styles.proofGrid}>
-          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
+          <View
+            style={[
+              styles.proofMetric,
+              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+            ]}
+          >
             <Text style={styles.proofMetricValue}>{durationSec > 0 ? `${durationSec}s` : '—'}</Text>
             <Text style={styles.proofMetricLabel}>time</Text>
           </View>
-          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
+          <View
+            style={[
+              styles.proofMetric,
+              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+            ]}
+          >
             <Text style={styles.proofMetricValue}>{streak}</Text>
             <Text style={styles.proofMetricLabel}>streak</Text>
           </View>
-          <View style={[styles.proofMetric, { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder }]}>
+          <View
+            style={[
+              styles.proofMetric,
+              { backgroundColor: proofTheme.metricBg, borderColor: proofTheme.metricBorder },
+            ]}
+          >
             <Text style={styles.proofMetricValue}>{reward?.daily ?? 0}</Text>
             <Text style={styles.proofMetricLabel}>xp</Text>
           </View>
@@ -486,7 +496,9 @@ export default function CompletionScreen() {
 
         <XpProgressCard totalXp={totalXp} tone="dark" compact />
 
-        {locationName ? <Text style={[styles.location, { color: proofTheme.subtleText }]}>@ {locationName}</Text> : null}
+        {locationName ? (
+          <Text style={[styles.location, { color: proofTheme.subtleText }]}>@ {locationName}</Text>
+        ) : null}
 
         {/* Streak display — prominent "DAY X" identity marker */}
         {streak > 0 && (
@@ -520,10 +532,10 @@ export default function CompletionScreen() {
                   {locationStatus === 'loading'
                     ? 'Adding location...'
                     : locationStatus === 'denied'
-                    ? 'Location skipped'
-                    : locationStatus === 'error'
-                    ? 'Location unavailable'
-                    : 'Add location to card'}
+                      ? 'Location skipped'
+                      : locationStatus === 'error'
+                        ? 'Location unavailable'
+                        : 'Add location to card'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -561,7 +573,11 @@ export default function CompletionScreen() {
                 <Text style={styles.inviteSub}>{inviteSub}</Text>
                 <TouchableOpacity onPress={handleShareInvite} activeOpacity={0.8}>
                   <Text style={styles.inviteShareText}>
-                    {isTestMode ? 'Share test →' : isDuelMode ? 'Share duel →' : 'Share challenge →'}
+                    {isTestMode
+                      ? 'Share test →'
+                      : isDuelMode
+                        ? 'Share duel →'
+                        : 'Share challenge →'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -587,19 +603,9 @@ export default function CompletionScreen() {
         onDismiss={() => setShowMilestone(false)}
       />
       <BadgeUnlockCelebration rewards={badgeRewards} />
+      {visualShareElement}
     </SafeAreaView>
   );
-}
-
-async function recordShareFailure(
-  payload: GrowthSharePayload,
-  surface: string,
-  error: unknown
-): Promise<void> {
-  await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
-    surface,
-    message: error instanceof Error ? error.message : String(error),
-  }));
 }
 
 function getRecoveryCopy(

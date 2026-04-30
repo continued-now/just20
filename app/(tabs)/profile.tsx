@@ -1,20 +1,15 @@
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { XpProgressCard } from '../../components/XpProgressCard';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
+import { useGrowthImageShare } from '../../hooks/useGrowthImageShare';
 import { getBadgeCollection } from '../../lib/badges';
 import { getBuddyLinks, getCoins, getStreak, type UserProfile } from '../../lib/db';
 import { getOrCreateUser } from '../../lib/user';
-import {
-  buildSharePayload,
-  getWeeklyChallenge,
-  growthEventFromPayload,
-  recordGrowthEvent,
-  type GrowthSharePayload,
-} from '../../lib/growth';
+import { buildSharePayload, getWeeklyChallenge } from '../../lib/growth';
 import { getXp, getXpLevelProgress } from '../../lib/xp';
 
 type ProfileData = {
@@ -33,6 +28,7 @@ type ProfileData = {
 export default function ProfileScreen() {
   const router = useRouter();
   const [data, setData] = useState<ProfileData | null>(null);
+  const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   useFocusEffect(
     useCallback(() => {
@@ -59,7 +55,7 @@ export default function ProfileScreen() {
             totalXp: xp.totalEarned,
             coinBalance: coins.balance,
             buddyCount: buddies.length,
-            unlockedBadges: badges.filter(badge => badge.unlocked).length,
+            unlockedBadges: badges.filter((badge) => badge.unlocked).length,
             totalBadges: badges.length,
           });
         } catch {
@@ -83,37 +79,49 @@ export default function ProfileScreen() {
 
   async function handleShareInvite() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await shareProfilePayload(buildSharePayload('profile', {
-      inviteCode,
-      streakDays: data?.currentStreak ?? 0,
-      source: 'profile',
-    }), 'profile_invite');
+    await shareGrowthPayload(
+      buildSharePayload('profile', {
+        inviteCode,
+        streakDays: data?.currentStreak ?? 0,
+        source: 'profile',
+      }),
+      'profile_invite'
+    );
   }
 
   async function handleShareChallenge() {
-    await shareProfilePayload(buildSharePayload('challenge', {
-      inviteCode,
-      streakDays: data?.currentStreak ?? 0,
-      challengeDays: 7,
-      source: 'profile',
-    }), 'profile_challenge');
+    await shareGrowthPayload(
+      buildSharePayload('challenge', {
+        inviteCode,
+        streakDays: data?.currentStreak ?? 0,
+        challengeDays: 7,
+        source: 'profile',
+      }),
+      'profile_challenge'
+    );
   }
 
   async function handleShareStreakProof() {
-    await shareProfilePayload(buildSharePayload('streak', {
-      inviteCode,
-      streakDays: data?.currentStreak ?? 0,
-      source: 'profile',
-    }), 'profile_streak_proof');
+    await shareGrowthPayload(
+      buildSharePayload('streak', {
+        inviteCode,
+        streakDays: data?.currentStreak ?? 0,
+        source: 'profile',
+      }),
+      'profile_streak_proof'
+    );
   }
 
   async function handleShareWeeklyChallenge() {
-    await shareProfilePayload(buildSharePayload('weekly_challenge', {
-      inviteCode,
-      streakDays: data?.currentStreak ?? 0,
-      weeklyChallenge,
-      source: 'profile',
-    }), 'profile_weekly_challenge');
+    await shareGrowthPayload(
+      buildSharePayload('weekly_challenge', {
+        inviteCode,
+        streakDays: data?.currentStreak ?? 0,
+        weeklyChallenge,
+        source: 'profile',
+      }),
+      'profile_weekly_challenge'
+    );
   }
 
   return (
@@ -234,25 +242,16 @@ export default function ProfileScreen() {
         >
           <View>
             <Text style={styles.settingsTitle}>Reminder Settings</Text>
-            <Text style={styles.settingsSub}>Time window, backup nudges, and notification controls live here now.</Text>
+            <Text style={styles.settingsSub}>
+              Time window, backup nudges, and notification controls live here now.
+            </Text>
           </View>
           <Text style={styles.chevron}>→</Text>
         </TouchableOpacity>
       </ScrollView>
+      {visualShareElement}
     </SafeAreaView>
   );
-}
-
-async function shareProfilePayload(payload: GrowthSharePayload, surface: string): Promise<void> {
-  try {
-    await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface }));
-    await Share.share({ message: payload.message, title: payload.title });
-  } catch (error) {
-    await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
-      surface,
-      message: error instanceof Error ? error.message : String(error),
-    }));
-  }
 }
 
 function StatTile({ label, value, accent }: { label: string; value: string; accent: string }) {

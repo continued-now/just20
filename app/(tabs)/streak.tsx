@@ -6,7 +6,6 @@ import {
   Easing,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { STREAK_TIERS, getTierInfo } from '../../components/Mascot';
 import { colors, fontSize, radius, spacing } from '../../constants/theme';
+import { useGrowthImageShare } from '../../hooks/useGrowthImageShare';
 import { isChestAvailable } from '../../lib/coins';
 import {
   getCalendarData,
@@ -25,7 +25,7 @@ import {
   type RecoveryType,
 } from '../../lib/db';
 import { localDayKey, localDaysBetween } from '../../lib/dates';
-import { buildSharePayload, growthEventFromPayload, recordGrowthEvent } from '../../lib/growth';
+import { buildSharePayload } from '../../lib/growth';
 import { MILESTONE_DAYS, getNextMilestone } from '../../lib/milestones';
 import { getEquippedCosmetics, getFlameStyle, type FlameStyleId } from '../../lib/shop';
 import { getXp } from '../../lib/xp';
@@ -63,6 +63,7 @@ export default function StreakScreen() {
   const flameGlow = useRef(new Animated.Value(0)).current;
   const [data, setData] = useState<StreakData | null>(null);
   const [selectedDay, setSelectedDay] = useState<WeekDay | null>(null);
+  const { shareGrowthPayload, visualShareElement } = useGrowthImageShare();
 
   useEffect(() => {
     const pulse = Animated.loop(
@@ -108,16 +109,17 @@ export default function StreakScreen() {
 
       async function load() {
         try {
-          const [streak, cal, recoveryCal, coins, xp, chestReady, profile, equipped] = await Promise.all([
-            getStreak(),
-            getCalendarData(42),
-            getRecoveryCalendarData(42),
-            getCoins(),
-            getXp(),
-            isChestAvailable(),
-            getUserProfile(),
-            getEquippedCosmetics(),
-          ]);
+          const [streak, cal, recoveryCal, coins, xp, chestReady, profile, equipped] =
+            await Promise.all([
+              getStreak(),
+              getCalendarData(42),
+              getRecoveryCalendarData(42),
+              getCoins(),
+              getXp(),
+              isChestAvailable(),
+              getUserProfile(),
+              getEquippedCosmetics(),
+            ]);
 
           if (!active) return;
           setData({
@@ -153,17 +155,25 @@ export default function StreakScreen() {
   const daysSinceCompletion = data?.lastCompletedDate
     ? localDaysBetween(data.lastCompletedDate, today)
     : null;
-  const freezeCanSaveToday = !completedToday && daysSinceCompletion === 2 && (data?.freezeCount ?? 0) > 0;
+  const freezeCanSaveToday =
+    !completedToday && daysSinceCompletion === 2 && (data?.freezeCount ?? 0) > 0;
   const streakIsAtRisk = current > 0 && !completedToday;
-  const dayOnLine = getDayOnLine(current, completedToday, data?.lastCompletedDate ?? null, data?.freezeCount ?? 0);
+  const dayOnLine = getDayOnLine(
+    current,
+    completedToday,
+    data?.lastCompletedDate ?? null,
+    data?.freezeCount ?? 0
+  );
   const nextMilestone = getNextMilestone(current);
   const milestoneTarget = nextMilestone?.days ?? MILESTONE_DAYS[MILESTONE_DAYS.length - 1];
   const nextTier = getTierInfo(current);
   const week = buildWeek(data?.calendar ?? {}, data?.recoveryCalendar ?? {});
-  const weekDoneCount = week.filter(day => day.done).length;
+  const weekDoneCount = week.filter((day) => day.done).length;
   const monthDoneCount = Object.values(data?.calendar ?? {}).filter(Boolean).length;
   const perfectWeekProgress = Math.min((weekDoneCount / PERFECT_WEEK_TARGET) * 100, 100);
-  const milestoneProgress = nextMilestone ? Math.min((current / nextMilestone.days) * 100, 100) : 100;
+  const milestoneProgress = nextMilestone
+    ? Math.min((current / nextMilestone.days) * 100, 100)
+    : 100;
   const hoursLeft = getHoursUntilMidnight();
   const streakLeague = getStreakLeague(current);
   const selected = selectedDay ?? week[week.length - 1];
@@ -176,15 +186,7 @@ export default function StreakScreen() {
       streakDays: current,
       source: 'streak',
     });
-    try {
-      await recordGrowthEvent(growthEventFromPayload(payload, 'share_opened', { surface: 'streak_center' }));
-      await Share.share({ message: payload.message, title: payload.title });
-    } catch (error) {
-      await recordGrowthEvent(growthEventFromPayload(payload, 'share_failed', {
-        surface: 'streak_center',
-        message: error instanceof Error ? error.message : String(error),
-      }));
-    }
+    await shareGrowthPayload(payload, 'streak_center');
   }
 
   async function handleDayPress(day: WeekDay) {
@@ -216,7 +218,11 @@ export default function StreakScreen() {
             >
               <Text style={styles.coinText}>🪙 {data?.coinBalance ?? 0}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.badgesPill} onPress={() => router.push('/badges' as any)} activeOpacity={0.82}>
+            <TouchableOpacity
+              style={styles.badgesPill}
+              onPress={() => router.push('/badges' as any)}
+              activeOpacity={0.82}
+            >
               <Text style={styles.badgesText}>Badges</Text>
             </TouchableOpacity>
           </View>
@@ -245,7 +251,9 @@ export default function StreakScreen() {
           </Animated.Text>
           <Text style={styles.streakNum}>{current}</Text>
           <Text style={styles.streakLabel}>{current === 1 ? 'day streak' : 'day streak'}</Text>
-          <Text style={styles.heroSub}>{getHeroCopy(current, completedToday, freezeCanSaveToday, hoursLeft)}</Text>
+          <Text style={styles.heroSub}>
+            {getHeroCopy(current, completedToday, freezeCanSaveToday, hoursLeft)}
+          </Text>
 
           <View style={styles.heroActions}>
             <TouchableOpacity
@@ -282,11 +290,17 @@ export default function StreakScreen() {
         </View>
 
         {data?.chestReady && (
-          <TouchableOpacity style={styles.chestCard} onPress={() => router.push('/chest-open')} activeOpacity={0.84}>
+          <TouchableOpacity
+            style={styles.chestCard}
+            onPress={() => router.push('/chest-open')}
+            activeOpacity={0.84}
+          >
             <Text style={styles.chestEmoji}>📦</Text>
             <View style={styles.chestTextWrap}>
               <Text style={styles.chestTitle}>Reward waiting</Text>
-              <Text style={styles.chestText}>You earned a weekly chest. Open it before the dopamine goblin gets impatient.</Text>
+              <Text style={styles.chestText}>
+                You earned a weekly chest. Open it before the dopamine goblin gets impatient.
+              </Text>
             </View>
             <Text style={styles.chevron}>→</Text>
           </TouchableOpacity>
@@ -302,7 +316,7 @@ export default function StreakScreen() {
           </View>
 
           <View style={styles.weekRow}>
-            {week.map(day => (
+            {week.map((day) => (
               <Pressable key={day.key} style={styles.dayCol} onPress={() => handleDayPress(day)}>
                 <View
                   style={[
@@ -322,7 +336,9 @@ export default function StreakScreen() {
                     {day.recoveryType !== 'none' ? 'P' : day.done ? '✓' : day.isToday ? '!' : '•'}
                   </Text>
                 </View>
-                <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>{day.label}</Text>
+                <Text style={[styles.dayLabel, day.isToday && styles.dayLabelToday]}>
+                  {day.label}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -337,10 +353,10 @@ export default function StreakScreen() {
               {selected.done
                 ? 'Stamped. This day is part of the streak story.'
                 : selected.recoveryType !== 'none'
-                ? 'Patched day. Active streak saved, but clean-streak badges still know the truth.'
-                : selected.isToday
-                ? 'Today is open. Finish 20 and make the ring glow.'
-                : 'Missed days are visible by design. The calendar should make quitting annoying.'}
+                  ? 'Patched day. Active streak saved, but clean-streak badges still know the truth.'
+                  : selected.isToday
+                    ? 'Today is open. Finish 20 and make the ring glow.'
+                    : 'Missed days are visible by design. The calendar should make quitting annoying.'}
             </Text>
           </View>
         </View>
@@ -350,14 +366,16 @@ export default function StreakScreen() {
             <View>
               <Text style={styles.cardTitle}>Next Big Moment</Text>
               <Text style={styles.cardSub}>
-                {nextMilestone ? `${nextMilestone.daysLeft} day${nextMilestone.daysLeft === 1 ? '' : 's'} until the next share-worthy badge.` : 'Every milestone is unlocked. Ridiculous.'}
+                {nextMilestone
+                  ? `${nextMilestone.daysLeft} day${nextMilestone.daysLeft === 1 ? '' : 's'} until the next share-worthy badge.`
+                  : 'Every milestone is unlocked. Ridiculous.'}
               </Text>
             </View>
             <Text style={styles.cardScore}>{nextMilestone ? nextMilestone.days : 'MAX'}</Text>
           </View>
           <View style={styles.milestoneTrack}>
             <View style={[styles.milestoneFill, { width: `${milestoneProgress}%` }]} />
-            {MILESTONE_DAYS.slice(0, 6).map(day => (
+            {MILESTONE_DAYS.slice(0, 6).map((day) => (
               <View
                 key={day}
                 style={[
@@ -379,7 +397,9 @@ export default function StreakScreen() {
           <View style={styles.cardHeader}>
             <View>
               <Text style={styles.cardTitle}>League Identity</Text>
-              <Text style={styles.cardSub}>Give the streak a status symbol, not just a number.</Text>
+              <Text style={styles.cardSub}>
+                Give the streak a status symbol, not just a number.
+              </Text>
             </View>
             <Text style={styles.leagueEmoji}>{streakLeague.emoji}</Text>
           </View>
@@ -390,17 +410,23 @@ export default function StreakScreen() {
           </View>
 
           <View style={styles.evoList}>
-            {[...STREAK_TIERS].reverse().map(tier => {
+            {[...STREAK_TIERS].reverse().map((tier) => {
               const reached = current >= tier.minDays;
               const isCurrent = nextTier.minDays === tier.minDays;
               return (
                 <View key={tier.minDays} style={[styles.evoRow, isCurrent && styles.evoRowCurrent]}>
                   <Text style={styles.evoForm}>{tier.form}</Text>
                   <View style={styles.evoMeta}>
-                    <Text style={[styles.evoLabel, reached && styles.evoLabelReached]}>{tier.label}</Text>
-                    <Text style={styles.evoSub}>{tier.minDays === 0 ? 'Start' : `Day ${tier.minDays}`}</Text>
+                    <Text style={[styles.evoLabel, reached && styles.evoLabelReached]}>
+                      {tier.label}
+                    </Text>
+                    <Text style={styles.evoSub}>
+                      {tier.minDays === 0 ? 'Start' : `Day ${tier.minDays}`}
+                    </Text>
                   </View>
-                  <Text style={[styles.evoState, reached && styles.evoStateDone]}>{reached ? '✓' : 'LOCK'}</Text>
+                  <Text style={[styles.evoState, reached && styles.evoStateDone]}>
+                    {reached ? '✓' : 'LOCK'}
+                  </Text>
                 </View>
               );
             })}
@@ -418,7 +444,9 @@ export default function StreakScreen() {
           <View style={styles.cardHeader}>
             <View>
               <Text style={styles.cardTitle}>Receipts</Text>
-              <Text style={styles.cardSub}>A tiny heatmap that makes consistency feel collectible.</Text>
+              <Text style={styles.cardSub}>
+                A tiny heatmap that makes consistency feel collectible.
+              </Text>
             </View>
             <TouchableOpacity onPress={() => router.push('/(tabs)/squad')} activeOpacity={0.78}>
               <Text style={styles.squadLink}>Squad →</Text>
@@ -450,10 +478,13 @@ export default function StreakScreen() {
         {streakIsAtRisk && (data?.freezeCount ?? 0) === 0 && (
           <View style={styles.warningCard}>
             <Text style={styles.warningTitle}>No freeze. No mercy.</Text>
-            <Text style={styles.warningText}>One missed day resets the public number. That little bit of pressure is the product.</Text>
+            <Text style={styles.warningText}>
+              One missed day resets the public number. That little bit of pressure is the product.
+            </Text>
           </View>
         )}
       </ScrollView>
+      {visualShareElement}
     </SafeAreaView>
   );
 }
@@ -484,7 +515,12 @@ function getHoursUntilMidnight(): number {
   return Math.max(1, Math.ceil((midnight.getTime() - now.getTime()) / (60 * 60 * 1000)));
 }
 
-function getDayOnLine(current: number, completedToday: boolean, lastCompletedDate: string | null, freezeCount: number): number {
+function getDayOnLine(
+  current: number,
+  completedToday: boolean,
+  lastCompletedDate: string | null,
+  freezeCount: number
+): number {
   if (completedToday) return Math.max(current, 1);
   if (!lastCompletedDate || current === 0) return 1;
 
@@ -494,7 +530,12 @@ function getDayOnLine(current: number, completedToday: boolean, lastCompletedDat
   return 1;
 }
 
-function getHeroCopy(current: number, completedToday: boolean, freezeCanSaveToday: boolean, hoursLeft: number): string {
+function getHeroCopy(
+  current: number,
+  completedToday: boolean,
+  freezeCanSaveToday: boolean,
+  hoursLeft: number
+): string {
   if (completedToday) return 'Today is locked. The streak survives another sunrise.';
   if (current === 0) return 'Start with one clean win. The first flame is the hardest.';
   if (freezeCanSaveToday) return 'A freeze can cover yesterday, but today still needs your 20.';
@@ -502,15 +543,48 @@ function getHeroCopy(current: number, completedToday: boolean, freezeCanSaveToda
 }
 
 function getStreakLeague(streak: number): { emoji: string; name: string; copy: string } {
-  if (streak >= 100) return { emoji: '👑', name: 'Mythic Flame', copy: 'This is the kind of streak people screenshot and argue with.' };
-  if (streak >= 30) return { emoji: '⚔️', name: 'Floor Menace', copy: 'Thirty days changes the app from reminder into identity.' };
-  if (streak >= 14) return { emoji: '🔥', name: 'Habit Locked', copy: 'Two weeks is where streaks start feeling expensive to lose.' };
-  if (streak >= 7) return { emoji: '🧊', name: 'Freeze Earner', copy: 'You crossed the first real line. Now the game has protection.' };
-  if (streak > 0) return { emoji: '✨', name: 'Spark Run', copy: 'Small streaks are fragile. That is exactly why they work.' };
+  if (streak >= 100)
+    return {
+      emoji: '👑',
+      name: 'Mythic Flame',
+      copy: 'This is the kind of streak people screenshot and argue with.',
+    };
+  if (streak >= 30)
+    return {
+      emoji: '⚔️',
+      name: 'Floor Menace',
+      copy: 'Thirty days changes the app from reminder into identity.',
+    };
+  if (streak >= 14)
+    return {
+      emoji: '🔥',
+      name: 'Habit Locked',
+      copy: 'Two weeks is where streaks start feeling expensive to lose.',
+    };
+  if (streak >= 7)
+    return {
+      emoji: '🧊',
+      name: 'Freeze Earner',
+      copy: 'You crossed the first real line. Now the game has protection.',
+    };
+  if (streak > 0)
+    return {
+      emoji: '✨',
+      name: 'Spark Run',
+      copy: 'Small streaks are fragile. That is exactly why they work.',
+    };
   return { emoji: '🎯', name: 'Unlit', copy: 'Light the first spark with one clean set.' };
 }
 
-function MiniStatus({ tone, label, value }: { tone: 'safe' | 'danger' | 'ice' | 'reward' | 'neutral'; label: string; value: string }) {
+function MiniStatus({
+  tone,
+  label,
+  value,
+}: {
+  tone: 'safe' | 'danger' | 'ice' | 'reward' | 'neutral';
+  label: string;
+  value: string;
+}) {
   return (
     <View style={[styles.miniStatus, styles[`miniStatus_${tone}`]]}>
       <Text style={styles.miniLabel}>{label}</Text>
@@ -792,7 +866,12 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   dayDetailTitle: { fontSize: fontSize.sm, fontWeight: '900', color: colors.text },
-  dayDetailText: { fontSize: fontSize.sm, fontWeight: '600', color: colors.subtext, lineHeight: 19 },
+  dayDetailText: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    color: colors.subtext,
+    lineHeight: 19,
+  },
 
   milestoneTrack: {
     height: 18,
